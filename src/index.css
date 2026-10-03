@@ -1,0 +1,300 @@
+/* ==========================================================================
+   DEVSIGNAL — CORE DESIGN SYSTEM & STYLES
+   Engineered for Software Engineers: Dark Theme, Glassmorphism & Print Precision
+   ========================================================================== */
+
+:root {
+  /* Color Palette - Cyber Dark & Deep Slate */
+  --bg-primary: #090d16;
+  --bg-secondary: #0f172a;
+  --bg-surface: #1e293b;
+  --bg-surface-hover: #273549;
+  --bg-glass: rgba(15, 23, 42, 0.75);
+  --bg-glass-card: rgba(30, 41, 59, 0.65);
+  
+  /* Borders */
+  --border-subtle: rgba(255, 255, 255, 0.08);
+  --border-medium: rgba(255, 255, 255, 0.14);
+  --border-focus: #38bdf8;
+  
+  /* Text */
+  --text-primary: #f8fafc;
+  --text-secondary: #94a3b8;
+  --text-muted: #64748b;
+  --text-inverse: #0f172a;
+  
+  /* Accents */
+  --accent-cyan: #38bdf8;
+  --accent-blue: #3b82f6;
+  --accent-emerald: #34d399;
+  --accent-amber: #fbbf24;
+  --accent-purple: #a855f7;
+  --accent-rose: #fb7185;
+  
+  --accent-primary: #38bdf8;
+  --accent-gradient: linear-gradient(135deg, #38bdf8 0%, #3b82f6 50%, #818cf8 100%);
+  --accent-glow: 0 0 20px rgba(56, 189, 248, 0.25);
+  
+  /* Shadows */
+  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.25);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.4), 0 2px 4px -2px rgba(0, 0, 0, 0.3);
+  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.5), 0 4px 6px -4px rgba(0, 0, 0, 0.4);
+  --shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.6), 0 8px 10px -6px rgba(0, 0, 0, 0.5);
+
+  /* Fonts */
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-heading: 'Plus Jakarta Sans', var(--font-sans);
+  --font-mono: 'Fira Code', 'JetBrains Mono', monospace;
+
+  /* Layout */
+  --header-height: 64px;
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 16px;
+  --radius-full: 9999px;
+  
+  /* Transitions */
+  --transition-fast: 150ms cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-normal: 250ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Base Reset */
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html, body {
+  min-height: 100vh;
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Custom Scrollbars — High Contrast Cyber Theme */
+::-webkit-scrollbar {
+  width: 9px;
+  height: 9px;
+}
+::-webkit-scrollbar-track {
+  background: rgba(15, 23, 42, 0.85);
+  border-radius: var(--radius-full);
+}
+::-webkit-scrollbar-thumb {
+  background: #0284c7;
+  border-radius: var(--radius-full);
+  border: 2px solid rgba(15, 23, 42, 0.85);
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #38bdf8;
+  box-shadow: 0 0 10px rgba(56, 189, 248, 0.5);
+}
+
+.custom-scroll {
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+  scrollbar-color: #0284c7 rgba(15, 23, 42, 0.85);
+}
+.custom-scroll:hover {
+  scrollbar-color: #38bdf8 rgba(15, 23, 42, 0.85);
+}
+
+/* Typography Utilities */
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--font-heading);
+  color: var(--text-primary);
+  font-weight: 600;
+  line-height: 1.25;
+}
+
+/* Ensure resume paper headings default to dark text regardless of global theme */
+#printable-resume h1,
+#printable-resume h2,
+#printable-resume h3,
+#printable-resume h4,
+#printable-resume h5,
+#printable-resume h6,
+.resume-paper h1,
+.resume-paper h2,
+.resume-paper h3,
+.resume-paper h4,
+.resume-paper h5,
+.resume-paper h6 {
+  color: #111827;
+}
+
+code, pre, .font-mono {
+  font-family: var(--font-mono);
+}
+
+/* Button & Interactive Utility Classes */
+button {
+  font-family: inherit;
+  cursor: pointer;
+  border: none;
+  background: none;
+  color: inherit;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+input, textarea, select {
+  font-family: inherit;
+  color: var(--text-primary);
+  background-color: rgba(15, 23, 42, 0.7);
+  border: 1px solid var(--border-medium);
+  border-radius: var(--radius-sm);
+  padding: 8px 12px;
+  font-size: 14px;
+  outline: none;
+  transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+}
+
+input:focus, textarea:focus, select:focus {
+  border-color: var(--border-focus);
+  box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.2);
+}
+
+/* Badge & Tag Styling */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: var(--radius-full);
+  font-size: 12px;
+  font-weight: 500;
+  font-family: var(--font-mono);
+}
+
+.badge-cyan {
+  background: rgba(56, 189, 248, 0.15);
+  color: #38bdf8;
+  border: 1px solid rgba(56, 189, 248, 0.3);
+}
+
+.badge-emerald {
+  background: rgba(52, 211, 153, 0.15);
+  color: #34d399;
+  border: 1px solid rgba(52, 211, 153, 0.3);
+}
+
+.badge-purple {
+  background: rgba(168, 85, 247, 0.15);
+  color: #c084fc;
+  border: 1px solid rgba(168, 85, 247, 0.3);
+}
+
+.badge-amber {
+  background: rgba(251, 191, 36, 0.15);
+  color: #fbbf24;
+  border: 1px solid rgba(251, 191, 36, 0.3);
+}
+
+/* Glass Panels */
+.glass-panel {
+  background: var(--bg-glass-card);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+}
+
+/* Animated gradient text */
+.gradient-text {
+  background: var(--accent-gradient);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  display: inline-block;
+}
+
+/* Global Container */
+.app-container {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ==========================================================================
+   PRINT STYLESHEET — High-Precision Vector Resume Printing
+   ========================================================================== */
+
+@page {
+  size: A4 portrait;
+  margin: 0;
+}
+
+@media print {
+  /* Hide the rest of the application interface */
+  html, body {
+    background: #ffffff !important;
+    color: #111827 !important;
+    font-size: 11pt !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    width: 100% !important;
+    height: auto !important;
+    overflow: visible !important;
+  }
+
+  body * {
+    visibility: hidden;
+  }
+
+  /* Only make the printable resume canvas visible */
+  #printable-resume, #printable-resume * {
+    visibility: visible;
+  }
+
+  #printable-resume {
+    position: absolute !important;
+    left: 0 !important;
+    top: 0 !important;
+    width: 210mm !important;
+    min-height: 297mm !important;
+    height: auto !important;
+    margin: 0 !important;
+    box-shadow: none !important;
+    border: none !important;
+    background: #ffffff !important;
+    color: #1f2937 !important;
+    transform: none !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  #printable-resume.density-compact {
+    padding: 8mm 12mm !important;
+  }
+
+  #printable-resume.density-standard {
+    padding: 10mm 14mm !important;
+  }
+
+  #printable-resume.density-relaxed {
+    padding: 15mm 18mm !important;
+  }
+
+  /* Prevent page breaks inside critical elements */
+  .resume-section, .resume-entry, .resume-project-item {
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+
+  /* Ensure links are printed cleanly */
+  a {
+    text-decoration: none !important;
+    color: inherit !important;
+  }
+
+  .no-print {
+    display: none !important;
+  }
+}
