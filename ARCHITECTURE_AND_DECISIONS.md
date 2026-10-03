@@ -1234,3 +1234,43 @@ The system is designed as an all-in-one career acceleration and resume synthesis
     - Brand element verified: `DEVSIGNAL`.
     - Screenshot captured: [devsignal_brand_verified.png](file:///C:/Users/subho/.gemini/antigravity-ide/brain/75e65e7d-aa78-4665-8026-7b2cbc730b76/devsignal_brand_verified.png).
   - Production build (`npm run build`) succeeded with 0 errors in 324ms.
+
+---
+
+### 20. Issue 021: ATS Score Matcher & Objective 3-Tier Keyword Recommendation Engine (Phase 1)
+* **Context**:
+  - Technical candidates applying to modern engineering roles frequently fail initial Applicant Tracking System (ATS) screening (Workday, Taleo, Greenhouse, Lever) or human recruiter screens due to keyword mismatches, lack of quantified impact metrics, or formatting non-compliance.
+  - The user requested an ATS Calculator that compares target Job Descriptions (JD) against the resume, computes an objective match score, provides actionable skill/keyword recommendations, and avoids naive keyword stuffing.
+* **Architectural Decisions & Industry-Standard Weighted Formula**:
+  - We benchmarked commercial screening systems (Jobscan, Teal, Resume Worded) and internal recruiter heuristics:
+    1. **Hard Skills & Keywords (45% Weight)**:
+       - Evaluates technical terms against both frequency and contextual location.
+       - **Anti-Keyword Stuffing Rule**: Skills listed only in a skills summary receive 50% weight. Skills demonstrated inside Work Experience bullets receive 100% weight, and Projects receive 85% weight.
+    2. **Role & Seniority Fit (20% Weight)**:
+       - Audits title token alignment (e.g. `Backend`, `Distributed Systems`, `Staff`, `Senior`, `Lead`) across target title, resume title, and professional summary.
+    3. **Quantified STAR/XYZ Impact (20% Weight)**:
+       - Audits percentage gains (`400%`), latencies (`48ms`), scale multipliers (`10M+`, `18k req/sec`), throughput, and dollar values across all bullet points.
+    4. **ATS Format & Structural Compliance (15% Weight)**:
+       - Validates contact metadata completeness, standard section headers, and 1-page A4 density (400–800 words).
+* **Objective 3-Tier Recommendation Engine**:
+  - Rather than treating all missing words equally, DevSignal implements an honest 3-tier triage:
+    - **Tier 1 (Safe Synonyms & Exact Match)**: Detects when the candidate has verified experience in related tech (e.g., candidate has `javascript` but JD asks for `TypeScript`, or candidate has `sql` but JD asks for `PostgreSQL`). Offers a 1-click `+ Add to Skills` button that immediately updates resume state and recomputes the score in real time.
+    - **Tier 2 (Contextual STAR Bullets)**: Identifies architectural requirements (e.g., `AWS`, `Kafka`) that demand real engineering context. Provides pre-built STAR bullet templates with metric placeholders (`[Throughput]`, `[Latency ms]`, `[Result]`) with a 1-click `Copy Template` button.
+    - **Tier 3 (True Skill Deficits - Objective Analysis)**: Flags core skills with no foundation in the candidate's resume. Displays an **Engineering Integrity Warning**: *"Do not blindly keyword stuff—technical screeners will probe deep into real production scenarios. Instead, use these as your roadmap for Dev Journal projects."*
+* **Implementation Highlights**:
+  - `src/utils/atsUtils.js`: 250+ technical skills taxonomy with bidirectional synonyms, `extractTechnicalSkills`, `extractResumeSkills`, `auditQuantifiedMetrics`, `auditRoleAlignment`, `auditAtsStructure`, and `calculateAtsScore`.
+  - `src/components/ResumeBuilder/AtsScoreModal.jsx`: Cyber-dark 2-column studio with Quick-Load Sample JDs, SVG circular score gauge, 4-pillar progress bars, 3-Tier recommendation cards, Matched Keywords pill list, and ATS Structural Checklist.
+  - `src/components/ResumeBuilder/ResumeBuilderTab.jsx`: Toolbar integration with dynamic ATS score badge (`ATS: 85% Exceptional`) and modal trigger.
+  - `src/context/AppContext.jsx`: Added `targetJobDescription`, `updateTargetJobDescription`, `atsScoreResult`, `updateAtsScoreResult`, and `addSkillToResume`.
+* **Phased Roadmap**:
+  - **Phase 1 (Complete)**: Local deterministic weighted scoring engine, 3-tier recommendations, and interactive studio modal.
+  - **Phase 2 (Next)**: Tech Market Radar Personalization & Dev Journal growth milestone sync.
+  - **Phase 3 (Future)**: Removing hardcoded requirements in favor of dynamic LLM/API-driven keyword extraction and customizable company heuristics.
+* **Verification & Visual Confirmation**:
+  - Unit tests passed 100% (`scratch/test_ats_utils.mjs`, `scratch/test_ats_recommendations.mjs`).
+  - Production build (`cmd /c npm run build`) passed with 0 errors in 325ms.
+  - Headless browser CDP testing (`scratch/test_tab_clicks.mjs`, `scratch/test_fullstack_sample.mjs`):
+    - Score calculated accurately (90% for Senior Distributed Systems, 85% for Senior Full Stack).
+    - Tier 1 1-click skill addition immediately updated resume state, fired toast notification, and recalculated match score.
+    - Screenshots verified: [modal_after_sample.png](file:///c:/Users/subho/OneDrive/Desktop/Projects/Resume%20Builder/scratch/modal_after_sample.png), [fullstack_sample_results.png](file:///c:/Users/subho/OneDrive/Desktop/Projects/Resume%20Builder/scratch/fullstack_sample_results.png), [tab_matched_verified.png](file:///c:/Users/subho/OneDrive/Desktop/Projects/Resume%20Builder/scratch/tab_matched_verified.png), [tab_structural_verified.png](file:///c:/Users/subho/OneDrive/Desktop/Projects/Resume%20Builder/scratch/tab_structural_verified.png), [toolbar_with_score.png](file:///c:/Users/subho/OneDrive/Desktop/Projects/Resume%20Builder/scratch/toolbar_with_score.png).
+

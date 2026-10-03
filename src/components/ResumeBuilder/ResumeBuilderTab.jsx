@@ -6,6 +6,7 @@ import PreviewCanvas from './PreviewCanvas';
 import JournalExtractorModal from './JournalExtractorModal';
 import AIEnhanceModal from './AIEnhanceModal';
 import ResumeHistoryModal from './ResumeHistoryModal';
+import AtsScoreModal from './AtsScoreModal';
 import confetti from 'canvas-confetti';
 import { 
   FileDown, 
@@ -18,7 +19,8 @@ import {
   Check, 
   Printer,
   Loader2,
-  History
+  History,
+  Target
 } from 'lucide-react';
 
 export default function ResumeBuilderTab() {
@@ -36,7 +38,10 @@ export default function ResumeBuilderTab() {
     enhanceEntireResume,
     resumeHistory,
     isHistoryOpen,
-    setIsHistoryOpen
+    setIsHistoryOpen,
+    isAtsModalOpen,
+    setIsAtsModalOpen,
+    atsScoreResult
   } = useApp();
 
   const [isExtractorOpen, setIsExtractorOpen] = useState(false);
@@ -144,6 +149,46 @@ export default function ResumeBuilderTab() {
 
         {/* Right: Actions */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <button
+            type="button"
+            onClick={() => setIsAtsModalOpen(true)}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              padding: '7px 14px',
+              borderRadius: 'var(--radius-sm)',
+              background: atsScoreResult 
+                ? `${atsScoreResult.tierColor}18` 
+                : 'linear-gradient(135deg, rgba(56, 189, 248, 0.2) 0%, rgba(52, 211, 153, 0.2) 100%)',
+              border: atsScoreResult 
+                ? `1px solid ${atsScoreResult.tierColor}60` 
+                : '1px solid rgba(56, 189, 248, 0.4)',
+              color: atsScoreResult ? atsScoreResult.tierColor : '#38bdf8',
+              fontSize: '12px',
+              fontWeight: 600,
+              cursor: 'pointer',
+              boxShadow: atsScoreResult ? `0 0 12px ${atsScoreResult.tierColor}25` : '0 0 10px rgba(56, 189, 248, 0.15)'
+            }}
+            title="Audit ATS match score, view missing keywords, and get 3-tier actionable recommendations"
+          >
+            <Target className="w-3.5 h-3.5" />
+            <span>
+              {atsScoreResult ? `ATS: ${atsScoreResult.totalScore}%` : 'ATS Match'}
+            </span>
+            {atsScoreResult && (
+              <span style={{
+                fontSize: '10px',
+                padding: '1px 5px',
+                borderRadius: '8px',
+                background: `${atsScoreResult.tierColor}25`,
+                fontWeight: 700
+              }}>
+                {atsScoreResult.tierLabel.split(' ')[0]}
+              </span>
+            )}
+          </button>
+
           <button
             type="button"
             onClick={() => setIsAiEnhanceOpen(true)}
@@ -296,6 +341,12 @@ export default function ResumeBuilderTab() {
       <ResumeHistoryModal
         isOpen={isHistoryOpen}
         onClose={() => setIsHistoryOpen(false)}
+      />
+
+      {/* ATS Match Calculator & Keyword Auditor Modal */}
+      <AtsScoreModal
+        isOpen={isAtsModalOpen}
+        onClose={() => setIsAtsModalOpen(false)}
       />
 
     </div>

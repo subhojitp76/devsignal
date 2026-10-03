@@ -16,6 +16,8 @@ const STORAGE_KEY = 'devsignal_v1';
 const LEGACY_STORAGE_KEY = 'dev_resume_studio_v1';
 const HISTORY_STORAGE_KEY = 'devsignal_history_v1';
 const LEGACY_HISTORY_KEY = 'dev_resume_history_v1';
+const TARGET_JD_STORAGE_KEY = 'devsignal_target_jd_v1';
+const ATS_RESULT_STORAGE_KEY = 'devsignal_ats_result_v1';
 
 const loadInitialHistory = (currentResume) => {
   try {
@@ -204,6 +206,7 @@ export function AppProvider({ children }) {
   const [isAiConfigOpen, setIsAiConfigOpen] = useState(false);
   const [isAiEnhanceOpen, setIsAiEnhanceOpen] = useState(false);
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
+  const [isAtsModalOpen, setIsAtsModalOpen] = useState(false);
 
   // URL synchronization & navigation handlers
   const setActiveTab = useCallback((tab, pushToHistory = true) => {
@@ -271,6 +274,87 @@ export function AppProvider({ children }) {
   const [selectedColor, setSelectedColor] = useState(initialState.selectedColor);
   const [resumeDensity, setResumeDensity] = useState(initialState.resumeDensity || 'standard');
   const [isEnhancingResume, setIsEnhancingResume] = useState(false);
+
+  // ATS Target Job Description & Cached Score Result
+  const [targetJobDescription, setTargetJobDescription] = useState(() => {
+    try {
+      return localStorage.getItem(TARGET_JD_STORAGE_KEY) || '';
+    } catch {
+      return '';
+    }
+  });
+
+  const [atsScoreResult, setAtsScoreResult] = useState(() => {
+    try {
+      const saved = localStorage.getItem(ATS_RESULT_STORAGE_KEY);
+      return saved ? JSON.parse(saved) : null;
+    } catch {
+      return null;
+    }
+  });
+
+  const updateTargetJobDescription = (jd) => {
+    setTargetJobDescription(jd);
+    try {
+      localStorage.setItem(TARGET_JD_STORAGE_KEY, jd);
+    } catch (e) {
+      console.warn('Failed to save target JD:', e);
+    }
+  };
+
+  const updateAtsScoreResult = (result) => {
+    setAtsScoreResult(result);
+    try {
+      if (result) {
+        localStorage.setItem(ATS_RESULT_STORAGE_KEY, JSON.stringify(result));
+      } else {
+        localStorage.removeItem(ATS_RESULT_STORAGE_KEY);
+      }
+    } catch (e) {
+      console.warn('Failed to save ATS result:', e);
+    }
+  };
+
+  // 1-Click addition of a missing skill/keyword to the active resume
+  const addSkillToResume = (skillName, categoryName = 'Technical Skills') => {
+    if (!skillName || !skillName.trim()) return;
+    const cleanSkill = skillName.trim();
+    
+    setResumeData(prev => {
+      const categories = Array.isArray(prev.skillCategories) ? [...prev.skillCategories] : [];
+      let targetCatIndex = categories.findIndex(c => 
+        c.category && c.category.toLowerCase().includes(categoryName.toLowerCase().split(' ')[0])
+      );
+
+      if (targetCatIndex === -1 && categories.length > 0) {
+        targetCatIndex = 0;
+      }
+
+      if (targetCatIndex >= 0) {
+        const cat = categories[targetCatIndex];
+        const existingSkills = Array.isArray(cat.skills) ? cat.skills : [];
+        if (!existingSkills.some(s => s.toLowerCase() === cleanSkill.toLowerCase())) {
+          categories[targetCatIndex] = {
+            ...cat,
+            skills: [...existingSkills, cleanSkill]
+          };
+        }
+      } else {
+        categories.push({
+          id: `skills-${Date.now()}`,
+          category: categoryName,
+          skills: [cleanSkill]
+        });
+      }
+
+      return {
+        ...prev,
+        skillCategories: categories
+      };
+    });
+
+    showToast(`Added "${cleanSkill}" to your resume skills!`, 'success');
+  };
 
   // Global Toast Notification
   const [toast, setToast] = useState({ show: false, message: '', type: 'info' });
@@ -624,7 +708,15 @@ export function AppProvider({ children }) {
         loadSampleData,
         resetAllData,
         exportFullBackup,
-        importFullBackup
+        importFullBackup,
+        // ATS Matcher State & Actions
+        isAtsModalOpen,
+        setIsAtsModalOpen,
+        targetJobDescription,
+        updateTargetJobDescription,
+        atsScoreResult,
+        updateAtsScoreResult,
+        addSkillToResume
       }}
     >
       {children}
