@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useApp } from '../../context/AppContext';
-import { calculateAtsScore, SAMPLE_JOB_DESCRIPTIONS } from '../../utils/atsUtils';
+import { calculateAtsScore, SAMPLE_JOB_DESCRIPTIONS, generateHeuristicAiAnalysis } from '../../utils/atsUtils';
+import { analyzeResumeWithLlm } from '../../services/llmService';
 import confetti from 'canvas-confetti';
 import {
   Target,
@@ -24,7 +25,9 @@ import {
   ArrowUpRight,
   HelpCircle,
   BarChart3,
-  Layers
+  Layers,
+  Bot,
+  Settings
 } from 'lucide-react';
 
 export default function AtsScoreModal({ isOpen, onClose }) {
@@ -36,15 +39,19 @@ export default function AtsScoreModal({ isOpen, onClose }) {
     updateAtsScoreResult,
     addSkillToResume,
     showToast,
-    saveResumeSnapshot
+    aiConfig,
+    setIsAiConfigOpen
   } = useApp();
 
   const [jobDescriptionInput, setJobDescriptionInput] = useState(targetJobDescription || '');
   const [targetTitleInput, setTargetTitleInput] = useState(resumeData?.personalInfo?.title || '');
   const [isAuditing, setIsAuditing] = useState(false);
-  const [activeTab, setActiveTab] = useState('recommendations'); // 'recommendations' | 'breakdown' | 'checklist' | 'matched'
+  const [activeTab, setActiveTab] = useState('recommendations'); // 'recommendations' | 'ai_insights' | 'matched' | 'checklist'
   const [copiedIndex, setCopiedIndex] = useState(null);
+  const [copiedRewriteIndex, setCopiedRewriteIndex] = useState(null);
   const [activeSampleId, setActiveSampleId] = useState(null);
+  const [aiAnalysis, setAiAnalysis] = useState(null);
+  const [isAiAnalyzing, setIsAiAnalyzing] = useState(false);
 
   // Sync initial input from context when opened
   useEffect(() => {
@@ -69,7 +76,7 @@ export default function AtsScoreModal({ isOpen, onClose }) {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isOpen, onClose]);
 
-  // Trigger ATS Calculation
+  // Trigger ATS Calculation & Pre-seed Heuristic AI Analysis
   const handleCalculateScore = (customJd = null, customTitle = null) => {
     const jdToUse = customJd !== null ? customJd : jobDescriptionInput;
     const titleToUse = customTitle !== null ? customTitle : targetTitleInput;
@@ -88,6 +95,11 @@ export default function AtsScoreModal({ isOpen, onClose }) {
       try {
         const result = calculateAtsScore(resumeData, jdToUse, titleToUse);
         updateAtsScoreResult(result);
+
+        // Pre-generate heuristic analysis so AI tab has immediate insights
+        const heuristicAi = generateHeuristicAiAnalysis(resumeData, jdToUse, titleToUse);
+        setAiAnalysis(heuristicAi);
+
         setIsAuditing(false);
 
         if (result.totalScore >= 85) {
@@ -110,19 +122,62 @@ export default function AtsScoreModal({ isOpen, onClose }) {
     }, 280);
   };
 
+  // Run deep LLM analysis on both Resume & JD
+  const handleRunAiAnalysis = async (customJd = null, customTitle = null) => {
+    const jdToUse = customJd !== null ? customJd : jobDescriptionInput;
+    const titleToUse = customTitle !== null ? customTitle : targetTitleInput;
+
+    if (!jdToUse.trim()) {
+      showToast('Please paste a Job Description first to run AI Recruiter Analysis.', 'info');
+      return;
+    }
+
+    setIsAiAnalyzing(true);
+    setActiveTab('ai_insights');
+
+    try {
+      const hasGeminiKey = aiConfig?.provider === 'gemini' && aiConfig.geminiApiKey?.trim();
+      const hasLocalLlm = aiConfig?.provider === 'ollama';
+
+      if (hasGeminiKey || hasLocalLlm) {
+        const providerLabel = aiConfig.provider === 'gemini'
+          ? (aiConfig.geminiModel || 'Gemini 3.8 Flash')
+          : (aiConfig.ollamaModel || 'Local LLM');
+
+        showToast(`Consulting ${providerLabel} for technical hiring manager assessment...`, 'info');
+        const llmResult = await analyzeResumeWithLlm({
+          resumeData,
+          jobDescription: jdToUse,
+          targetTitle: titleToUse,
+          aiConfig
+        });
+        setAiAnalysis(llmResult);
+        showToast('AI Recruiter Deep Dive complete!', 'success');
+      } else {
+        showToast('Running deterministic Heuristic Analysis (Configure AI Settings for live Gemini / Local LLM)...', 'info');
+        const heuristicResult = generateHeuristicAiAnalysis(resumeData, jdToUse, titleToUse);
+        setAiAnalysis(heuristicResult);
+      }
+    } catch (err) {
+      console.warn('Live LLM call error, using heuristic fallback:', err);
+      showToast(`LLM call error (${err.message}). Using Heuristic Analysis fallback.`, 'warning');
+      const fallbackResult = generateHeuristicAiAnalysis(resumeData, jdToUse, titleToUse);
+      setAiAnalysis(fallbackResult);
+    } finally {
+      setIsAiAnalyzing(false);
+    }
+  };
+
   // Re-run audit automatically when resume changes if a JD is already scored
   const handleAddSkillAndRecompute = (skillCanonical, category) => {
-    // 1. Add skill to resume in context
     addSkillToResume(skillCanonical, category);
 
-    // 2. We can recompute with updated resume in next tick
     setTimeout(() => {
       if (jobDescriptionInput.trim()) {
         const updatedResume = {
           ...resumeData,
           skillCategories: resumeData.skillCategories?.map(c => ({ ...c })) || []
         };
-        // Re-run
         const newResult = calculateAtsScore(updatedResume, jobDescriptionInput, targetTitleInput);
         updateAtsScoreResult(newResult);
       }
@@ -136,6 +191,13 @@ export default function AtsScoreModal({ isOpen, onClose }) {
     setTimeout(() => setCopiedIndex(null), 2500);
   };
 
+  const handleCopyRewrite = (text, idx) => {
+    navigator.clipboard.writeText(text);
+    setCopiedRewriteIndex(idx);
+    showToast('AI bullet rewrite copied to clipboard!', 'success');
+    setTimeout(() => setCopiedRewriteIndex(null), 2500);
+  };
+
   const handleLoadSample = (sample) => {
     setActiveSampleId(sample.id);
     setJobDescriptionInput(sample.text);
@@ -146,6 +208,7 @@ export default function AtsScoreModal({ isOpen, onClose }) {
   const handleClear = () => {
     setJobDescriptionInput('');
     setActiveSampleId(null);
+    setAiAnalysis(null);
     updateTargetJobDescription('');
     updateAtsScoreResult(null);
     showToast('Cleared Job Description and audit results.', 'info');
@@ -183,7 +246,7 @@ export default function AtsScoreModal({ isOpen, onClose }) {
           boxShadow: '0 25px 60px -15px rgba(0, 0, 0, 0.95), 0 0 35px rgba(56, 189, 248, 0.15)',
           borderRadius: '16px',
           width: '100%',
-          maxWidth: '1240px',
+          maxWidth: '1280px',
           height: '88vh',
           maxHeight: '920px',
           display: 'flex',
@@ -210,7 +273,7 @@ export default function AtsScoreModal({ isOpen, onClose }) {
                 width: '42px',
                 height: '42px',
                 borderRadius: '10px',
-                background: 'linear-gradient(135deg, rgba(56, 189, 248, 0.25) 0%, rgba(52, 211, 153, 0.2) 100%)',
+                background: 'linear-gradient(135deg, rgba(56, 189, 248, 0.25) 0%, rgba(168, 85, 247, 0.2) 100%)',
                 border: '1px solid rgba(56, 189, 248, 0.4)',
                 display: 'flex',
                 alignItems: 'center',
@@ -222,7 +285,7 @@ export default function AtsScoreModal({ isOpen, onClose }) {
             <div>
               <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                 <h2 style={{ fontSize: '18px', fontWeight: 700, color: 'var(--text-primary)', margin: 0 }}>
-                  ATS Match Calculator & Recruiter Keyword Auditor
+                  ATS Match Calculator & AI Recruiter Auditor
                 </h2>
                 <span
                   style={{
@@ -235,11 +298,11 @@ export default function AtsScoreModal({ isOpen, onClose }) {
                     fontWeight: 600
                   }}
                 >
-                  Industry Weighted Algorithm
+                  Weighted Engine + LLM Qualitative Deep Dive
                 </span>
               </div>
               <p style={{ fontSize: '12px', color: 'var(--text-muted)', margin: '2px 0 0 0' }}>
-                Skills & Keywords (45%) • Role Fit (20%) • Quantified STAR Impact (20%) • ATS Format & Compliance (15%)
+                Skills & Keywords (45%) • Role Fit (20%) • Quantified STAR Impact (20%) • ATS Format (15%) • LLM Semantic Critique
               </p>
             </div>
           </div>
@@ -247,12 +310,33 @@ export default function AtsScoreModal({ isOpen, onClose }) {
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
             <button
               type="button"
+              onClick={() => setIsAiConfigOpen(true)}
+              style={{
+                background: 'rgba(30, 41, 59, 0.7)',
+                border: '1px solid var(--border-medium)',
+                borderRadius: '8px',
+                padding: '7px 11px',
+                color: 'var(--text-secondary)',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '5px',
+                fontSize: '12px'
+              }}
+              title="Configure Gemini API or Local LLM"
+            >
+              <Settings className="w-3.5 h-3.5 text-slate-400" />
+              <span>AI Settings</span>
+            </button>
+
+            <button
+              type="button"
               onClick={onClose}
               style={{
                 background: 'rgba(30, 41, 59, 0.7)',
                 border: '1px solid var(--border-medium)',
                 borderRadius: '8px',
-                padding: '7px 10px',
+                padding: '7px 11px',
                 color: 'var(--text-secondary)',
                 cursor: 'pointer',
                 display: 'flex',
@@ -354,7 +438,7 @@ export default function AtsScoreModal({ isOpen, onClose }) {
             </div>
 
             {/* JD Input Textarea */}
-            <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: '260px' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: '250px' }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
                 <label style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-secondary)' }}>
                   Job Description Text:
@@ -403,45 +487,84 @@ export default function AtsScoreModal({ isOpen, onClose }) {
               />
             </div>
 
-            {/* Calculate Button */}
-            <button
-              type="button"
-              onClick={() => handleCalculateScore()}
-              disabled={isAuditing || !jobDescriptionInput.trim()}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: '8px',
-                padding: '12px',
-                borderRadius: '8px',
-                background: !jobDescriptionInput.trim()
-                  ? 'rgba(30, 41, 59, 0.4)'
-                  : 'linear-gradient(135deg, #0284c7 0%, #38bdf8 100%)',
-                color: !jobDescriptionInput.trim() ? 'var(--text-muted)' : '#090d16',
-                fontWeight: 700,
-                fontSize: '13px',
-                border: 'none',
-                cursor: !jobDescriptionInput.trim() || isAuditing ? 'not-allowed' : 'pointer',
-                boxShadow: jobDescriptionInput.trim() ? 'var(--accent-glow)' : 'none',
-                transition: 'all 0.2s ease'
-              }}
-            >
-              {isAuditing ? (
-                <>
-                  <RefreshCw className="w-4 h-4 animate-spin" />
-                  <span>Auditing Resume Match...</span>
-                </>
-              ) : (
-                <>
-                  <Target className="w-4 h-4" />
-                  <span>Calculate ATS Match Score</span>
-                </>
-              )}
-            </button>
+            {/* Action Buttons: ATS Audit & AI Recruiter Deep Dive */}
+            <div style={{ display: 'flex', gap: '8px' }}>
+              <button
+                type="button"
+                onClick={() => handleCalculateScore()}
+                disabled={isAuditing || !jobDescriptionInput.trim()}
+                style={{
+                  flex: 1,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '6px',
+                  padding: '11px',
+                  borderRadius: '8px',
+                  background: !jobDescriptionInput.trim()
+                    ? 'rgba(30, 41, 59, 0.4)'
+                    : 'linear-gradient(135deg, #0284c7 0%, #38bdf8 100%)',
+                  color: !jobDescriptionInput.trim() ? 'var(--text-muted)' : '#090d16',
+                  fontWeight: 700,
+                  fontSize: '12px',
+                  border: 'none',
+                  cursor: !jobDescriptionInput.trim() || isAuditing ? 'not-allowed' : 'pointer',
+                  boxShadow: jobDescriptionInput.trim() ? 'var(--accent-glow)' : 'none',
+                  transition: 'all 0.2s ease'
+                }}
+              >
+                {isAuditing ? (
+                  <>
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                    <span>Auditing...</span>
+                  </>
+                ) : (
+                  <>
+                    <Target className="w-3.5 h-3.5" />
+                    <span>Calculate ATS Match</span>
+                  </>
+                )}
+              </button>
+
+              <button
+                type="button"
+                onClick={() => handleRunAiAnalysis()}
+                disabled={isAiAnalyzing || !jobDescriptionInput.trim()}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '6px',
+                  padding: '11px 16px',
+                  borderRadius: '8px',
+                  background: !jobDescriptionInput.trim()
+                    ? 'rgba(30, 41, 59, 0.3)'
+                    : 'linear-gradient(135deg, rgba(168, 85, 247, 0.25) 0%, rgba(56, 189, 248, 0.25) 100%)',
+                  border: '1px solid rgba(168, 85, 247, 0.5)',
+                  color: !jobDescriptionInput.trim() ? 'var(--text-muted)' : '#c084fc',
+                  fontWeight: 700,
+                  fontSize: '12px',
+                  cursor: !jobDescriptionInput.trim() || isAiAnalyzing ? 'not-allowed' : 'pointer',
+                  boxShadow: '0 0 14px rgba(168, 85, 247, 0.15)'
+                }}
+                title="Ask LLM models to look into both resume and JD for deep qualitative critique"
+              >
+                {isAiAnalyzing ? (
+                  <>
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin text-purple-400" />
+                    <span>Consulting LLM...</span>
+                  </>
+                ) : (
+                  <>
+                    <Sparkles className="w-3.5 h-3.5 text-purple-400" />
+                    <span>Ask LLM</span>
+                  </>
+                )}
+              </button>
+            </div>
           </div>
 
-          {/* Right Column: Score Results & 3-Tier Recommendations */}
+          {/* Right Column: Score Results, 3-Tier Recommendations & AI Recruiter Insights */}
           <div
             style={{
               padding: '24px',
@@ -484,7 +607,7 @@ export default function AtsScoreModal({ isOpen, onClose }) {
                   No ATS Audit Run Yet
                 </h3>
                 <p style={{ fontSize: '13px', maxWidth: '420px', lineHeight: '1.5', margin: '0 0 20px 0' }}>
-                  Select one of the quick-load job descriptions on the left or paste your own target JD to evaluate compatibility against recruiter parsing bots.
+                  Select one of the quick-load job descriptions on the left or paste your own target JD to evaluate compatibility against recruiter parsing bots and get AI hiring manager critique.
                 </p>
                 <button
                   type="button"
@@ -763,6 +886,34 @@ export default function AtsScoreModal({ isOpen, onClose }) {
                   >
                     <Sparkles className="w-3.5 h-3.5" />
                     <span>3-Tier Recommendations</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setActiveTab('ai_insights');
+                      if (!aiAnalysis) handleRunAiAnalysis();
+                    }}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      padding: '6px 14px',
+                      borderRadius: '6px',
+                      background: activeTab === 'ai_insights' ? 'linear-gradient(135deg, rgba(168, 85, 247, 0.2) 0%, rgba(56, 189, 248, 0.2) 100%)' : 'transparent',
+                      border: activeTab === 'ai_insights' ? '1px solid rgba(168, 85, 247, 0.5)' : '1px solid transparent',
+                      color: activeTab === 'ai_insights' ? '#c084fc' : 'var(--text-muted)',
+                      fontSize: '12px',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                      boxShadow: activeTab === 'ai_insights' ? '0 0 10px rgba(168, 85, 247, 0.15)' : 'none'
+                    }}
+                  >
+                    <Bot className="w-3.5 h-3.5 text-purple-400" />
+                    <span>AI Recruiter Deep Dive</span>
+                    <span style={{ fontSize: '9px', padding: '1px 5px', borderRadius: '8px', background: 'rgba(168, 85, 247, 0.25)', color: '#c084fc', fontWeight: 700 }}>
+                      LLM
+                    </span>
                   </button>
 
                   <button
@@ -1087,7 +1238,336 @@ export default function AtsScoreModal({ isOpen, onClose }) {
                   </div>
                 )}
 
-                {/* Tab Content 2: Matched Keywords */}
+                {/* Tab Content 2: AI Recruiter Deep Dive (LLM Semantic Evaluation) */}
+                {activeTab === 'ai_insights' && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                    
+                    {/* AI Top Control & Model Banner */}
+                    <div
+                      style={{
+                        background: 'linear-gradient(135deg, rgba(168, 85, 247, 0.15) 0%, rgba(56, 189, 248, 0.1) 100%)',
+                        border: '1px solid rgba(168, 85, 247, 0.35)',
+                        borderRadius: '12px',
+                        padding: '16px 20px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        flexWrap: 'wrap',
+                        gap: '12px'
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                        <div
+                          style={{
+                            width: '36px',
+                            height: '36px',
+                            borderRadius: '8px',
+                            background: 'rgba(168, 85, 247, 0.25)',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center'
+                          }}
+                        >
+                          <Bot className="w-5 h-5 text-purple-400" />
+                        </div>
+                        <div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <span style={{ fontSize: '14px', fontWeight: 700, color: 'var(--text-primary)' }}>
+                              Technical Hiring Manager Evaluation
+                            </span>
+                            <span
+                              style={{
+                                fontSize: '10px',
+                                padding: '2px 8px',
+                                borderRadius: '10px',
+                                background: 'rgba(168, 85, 247, 0.25)',
+                                color: '#c084fc',
+                                fontWeight: 700
+                              }}
+                            >
+                              {aiAnalysis?.modelUsed || 'Neural Analysis'}
+                            </span>
+                          </div>
+                          <p style={{ fontSize: '12px', color: 'var(--text-muted)', margin: '2px 0 0 0' }}>
+                            Deep semantic critique evaluating engineering level, architectural ownership, and potential screen disqualifiers.
+                          </p>
+                        </div>
+                      </div>
+
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <button
+                          type="button"
+                          onClick={() => handleRunAiAnalysis()}
+                          disabled={isAiAnalyzing}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '6px',
+                            padding: '6px 14px',
+                            borderRadius: '6px',
+                            background: 'linear-gradient(135deg, rgba(168, 85, 247, 0.3) 0%, rgba(56, 189, 248, 0.3) 100%)',
+                            border: '1px solid rgba(168, 85, 247, 0.5)',
+                            color: '#c084fc',
+                            fontSize: '12px',
+                            fontWeight: 600,
+                            cursor: isAiAnalyzing ? 'not-allowed' : 'pointer'
+                          }}
+                        >
+                          <RefreshCw className={`w-3.5 h-3.5 ${isAiAnalyzing ? 'animate-spin' : ''}`} />
+                          <span>{isAiAnalyzing ? 'Analyzing...' : 'Re-run Analysis'}</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    {!aiAnalysis ? (
+                      <div
+                        style={{
+                          padding: '30px',
+                          textAlign: 'center',
+                          color: 'var(--text-muted)',
+                          background: 'rgba(15, 23, 42, 0.4)',
+                          borderRadius: '12px'
+                        }}
+                      >
+                        <RefreshCw className="w-6 h-6 animate-spin mx-auto mb-2 text-purple-400" />
+                        <p style={{ fontSize: '13px' }}>Generating deep LLM recruiter analysis...</p>
+                      </div>
+                    ) : (
+                      <>
+                        {/* Executive Fit Verdict Card */}
+                        <div
+                          style={{
+                            background: 'rgba(15, 23, 42, 0.7)',
+                            border: '1px solid var(--border-subtle)',
+                            borderRadius: '12px',
+                            padding: '18px 20px'
+                          }}
+                        >
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                              <span
+                                style={{
+                                  padding: '4px 10px',
+                                  borderRadius: '8px',
+                                  background: aiAnalysis.fitVerdict?.toLowerCase().includes('strong')
+                                    ? 'rgba(52, 211, 153, 0.2)'
+                                    : aiAnalysis.fitVerdict?.toLowerCase().includes('moderate')
+                                    ? 'rgba(251, 191, 36, 0.2)'
+                                    : 'rgba(248, 113, 113, 0.2)',
+                                  color: aiAnalysis.fitVerdict?.toLowerCase().includes('strong')
+                                    ? '#34d399'
+                                    : aiAnalysis.fitVerdict?.toLowerCase().includes('moderate')
+                                    ? '#fbbf24'
+                                    : '#f87171',
+                                  fontSize: '12px',
+                                  fontWeight: 700
+                                }}
+                              >
+                                {aiAnalysis.fitVerdict || 'Evaluated'}
+                              </span>
+                              <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
+                                {aiAnalysis.seniorityAlignment}
+                              </span>
+                            </div>
+                          </div>
+
+                          <p style={{ fontSize: '13px', color: 'var(--text-primary)', lineHeight: '1.5', margin: 0 }}>
+                            {aiAnalysis.fitSummary}
+                          </p>
+                        </div>
+
+                        {/* 2-Column: Strengths vs Gaps & Red Flags */}
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
+                          
+                          {/* Strengths */}
+                          <div
+                            style={{
+                              background: 'rgba(15, 23, 42, 0.6)',
+                              border: '1px solid rgba(52, 211, 153, 0.3)',
+                              borderRadius: '10px',
+                              padding: '16px'
+                            }}
+                          >
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '12px', color: '#34d399' }}>
+                              <CheckCircle2 className="w-4 h-4" />
+                              <span style={{ fontSize: '13px', fontWeight: 700 }}>Key Technical Differentiators</span>
+                            </div>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                              {(aiAnalysis.keyStrengths || []).map((strength, idx) => (
+                                <div
+                                  key={idx}
+                                  style={{
+                                    fontSize: '12px',
+                                    color: 'var(--text-secondary)',
+                                    lineHeight: '1.4',
+                                    display: 'flex',
+                                    gap: '8px'
+                                  }}
+                                >
+                                  <span style={{ color: '#34d399', fontWeight: 700 }}>•</span>
+                                  <span>{strength}</span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+
+                          {/* Critical Gaps & Potential Screen Disqualifiers */}
+                          <div
+                            style={{
+                              background: 'rgba(15, 23, 42, 0.6)',
+                              border: '1px solid rgba(248, 113, 113, 0.3)',
+                              borderRadius: '10px',
+                              padding: '16px'
+                            }}
+                          >
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '12px', color: '#f87171' }}>
+                              <AlertTriangle className="w-4 h-4" />
+                              <span style={{ fontSize: '13px', fontWeight: 700 }}>Critical Gaps & Screening Risks</span>
+                            </div>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                              {(aiAnalysis.criticalGaps || []).map((gap, idx) => (
+                                <div
+                                  key={idx}
+                                  style={{
+                                    fontSize: '12px',
+                                    color: 'var(--text-secondary)',
+                                    lineHeight: '1.4',
+                                    display: 'flex',
+                                    gap: '8px'
+                                  }}
+                                >
+                                  <span style={{ color: '#f87171', fontWeight: 700 }}>•</span>
+                                  <span>{gap}</span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+
+                        </div>
+
+                        {/* Tailored Bullet Point Rewrites */}
+                        {(aiAnalysis.tailoredBulletRewrites || []).length > 0 && (
+                          <div
+                            style={{
+                              background: 'rgba(15, 23, 42, 0.6)',
+                              border: '1px solid rgba(168, 85, 247, 0.3)',
+                              borderRadius: '10px',
+                              padding: '16px'
+                            }}
+                          >
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '12px', color: '#c084fc' }}>
+                              <TrendingUp className="w-4 h-4" />
+                              <span style={{ fontSize: '13px', fontWeight: 700 }}>Tailored Bullet Rewrites (STAR / XYZ Impact)</span>
+                            </div>
+
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                              {aiAnalysis.tailoredBulletRewrites.map((rewrite, idx) => (
+                                <div
+                                  key={idx}
+                                  style={{
+                                    background: 'rgba(30, 41, 59, 0.5)',
+                                    border: '1px solid var(--border-subtle)',
+                                    borderRadius: '8px',
+                                    padding: '12px 14px'
+                                  }}
+                                >
+                                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
+                                    <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                                      {rewrite.originalContext || 'Targeted Revision'}
+                                    </span>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleCopyRewrite(rewrite.suggestedRewrite, idx)}
+                                      style={{
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: '4px',
+                                        padding: '4px 10px',
+                                        borderRadius: '6px',
+                                        background: copiedRewriteIndex === idx ? 'rgba(52, 211, 153, 0.2)' : 'rgba(168, 85, 247, 0.15)',
+                                        border: copiedRewriteIndex === idx ? '1px solid rgba(52, 211, 153, 0.4)' : '1px solid rgba(168, 85, 247, 0.3)',
+                                        color: copiedRewriteIndex === idx ? '#34d399' : '#c084fc',
+                                        fontSize: '11px',
+                                        fontWeight: 600,
+                                        cursor: 'pointer'
+                                      }}
+                                    >
+                                      {copiedRewriteIndex === idx ? (
+                                        <>
+                                          <Check className="w-3 h-3" />
+                                          <span>Copied!</span>
+                                        </>
+                                      ) : (
+                                        <>
+                                          <Copy className="w-3 h-3" />
+                                          <span>Copy Rewrite</span>
+                                        </>
+                                      )}
+                                    </button>
+                                  </div>
+
+                                  <div
+                                    style={{
+                                      fontSize: '12px',
+                                      color: 'var(--text-primary)',
+                                      background: 'rgba(15, 23, 42, 0.75)',
+                                      padding: '8px 12px',
+                                      borderRadius: '6px',
+                                      fontFamily: 'monospace',
+                                      marginBottom: '6px'
+                                    }}
+                                  >
+                                    {rewrite.suggestedRewrite}
+                                  </div>
+
+                                  <div style={{ fontSize: '11px', color: '#c084fc', fontStyle: 'italic' }}>
+                                    Why this works: {rewrite.rationale}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Anticipated Technical Interview Probing Areas */}
+                        {(aiAnalysis.interviewProbingAreas || []).length > 0 && (
+                          <div
+                            style={{
+                              background: 'rgba(15, 23, 42, 0.6)',
+                              border: '1px solid var(--border-subtle)',
+                              borderRadius: '10px',
+                              padding: '16px'
+                            }}
+                          >
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '12px', color: '#38bdf8' }}>
+                              <HelpCircle className="w-4 h-4" />
+                              <span style={{ fontSize: '13px', fontWeight: 700 }}>Anticipated Technical Interview Probing Questions</span>
+                            </div>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                              {aiAnalysis.interviewProbingAreas.map((q, idx) => (
+                                <div
+                                  key={idx}
+                                  style={{
+                                    fontSize: '12px',
+                                    color: 'var(--text-primary)',
+                                    background: 'rgba(30, 41, 59, 0.4)',
+                                    padding: '8px 12px',
+                                    borderRadius: '6px',
+                                    lineHeight: '1.4'
+                                  }}
+                                >
+                                  {q}
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </>
+                    )}
+                  </div>
+                )}
+
+                {/* Tab Content 3: Matched Keywords */}
                 {activeTab === 'matched' && (
                   <div
                     style={{
@@ -1135,7 +1615,7 @@ export default function AtsScoreModal({ isOpen, onClose }) {
                   </div>
                 )}
 
-                {/* Tab Content 3: ATS Structural Audit */}
+                {/* Tab Content 4: ATS Structural Audit */}
                 {activeTab === 'checklist' && (
                   <div
                     style={{

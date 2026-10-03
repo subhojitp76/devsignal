@@ -282,3 +282,114 @@ export async function generateLlmCompletion({ prompt, systemInstruction = '', ai
     throw error;
   }
 }
+
+/**
+ * Deep Recruiter & Hiring Manager Analysis comparing Resume vs Job Description
+ */
+export async function analyzeResumeWithLlm({ resumeData, jobDescription, targetTitle = '', aiConfig }) {
+  if (!jobDescription || jobDescription.trim().length < 20) {
+    throw new Error('Please provide a job description to analyze.');
+  }
+
+  const systemInstruction = `You are a Principal Software Engineer and Staff Technical Hiring Manager at a top-tier tech company.
+Your job is to provide an objective, rigorous, and candid technical assessment comparing a candidate's resume against a job description.
+DO NOT flatter the candidate. Be direct, objective, and constructive. Point out real discrepancies in seniority, scale, and domain depth.
+You MUST output valid JSON ONLY matching the requested schema.`;
+
+  const resumeSummaryData = {
+    fullName: resumeData.personalInfo?.fullName,
+    currentTitle: resumeData.personalInfo?.title,
+    summary: resumeData.summary,
+    skills: (resumeData.skillCategories || []).map(c => ({
+      category: c.category,
+      skills: Array.isArray(c.skills) ? c.skills.join(', ') : c.skills
+    })),
+    experience: (resumeData.experience || []).map(e => ({
+      role: e.role,
+      company: e.company,
+      bullets: e.bullets
+    })),
+    projects: (resumeData.projects || []).map(p => ({
+      title: p.title,
+      tech: p.technologies,
+      bullets: p.bullets
+    }))
+  };
+
+  const prompt = `Evaluate this candidate's resume against the target Job Description.
+
+TARGET ROLE:
+${targetTitle || resumeData.personalInfo?.title || 'Software Engineer'}
+
+JOB DESCRIPTION:
+${jobDescription.trim()}
+
+CANDIDATE RESUME:
+${JSON.stringify(resumeSummaryData, null, 2)}
+
+Provide your analysis in strictly valid JSON format with this exact structure:
+{
+  "fitVerdict": "Strong Match" | "Moderate Match" | "High Risk / Gaps",
+  "fitSummary": "2-3 concise sentences giving an honest, unvarnished hiring manager assessment of whether this candidate would pass a technical resume screen for this role.",
+  "seniorityAlignment": "Assessment of whether the candidate's demonstrated scope matches the requested seniority (Junior, Mid, Senior, Staff, Lead).",
+  "keyStrengths": [
+    "Specific technical strength 1 with evidence from resume",
+    "Specific technical strength 2",
+    "Specific technical strength 3"
+  ],
+  "criticalGaps": [
+    "Specific missing domain, architecture, or scale proof 1",
+    "Specific missing requirement 2"
+  ],
+  "tailoredBulletRewrites": [
+    {
+      "originalContext": "Context or quote from candidate's experience",
+      "suggestedRewrite": "High-impact STAR/XYZ bullet rewrite that speaks directly to the JD's technical challenges without fabricating skills",
+      "rationale": "Why this rewrite stands out to a technical hiring manager"
+    }
+  ],
+  "interviewProbingAreas": [
+    "Technical deep-dive question 1 interviewers will ask based on the gap between resume and JD",
+    "Technical deep-dive question 2"
+  ]
+}`;
+
+  const rawOutput = await generateLlmCompletion({
+    prompt,
+    systemInstruction,
+    aiConfig
+  });
+
+  // Extract and parse JSON
+  let parsed = null;
+  try {
+    let clean = rawOutput.trim();
+    if (clean.startsWith('```')) {
+      clean = clean.replace(/^```(?:json)?\s*\n?/, '').replace(/\n?```\s*$/, '');
+    }
+    const firstBrace = clean.indexOf('{');
+    const lastBrace = clean.lastIndexOf('}');
+    if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
+      clean = clean.substring(firstBrace, lastBrace + 1);
+    }
+    parsed = JSON.parse(clean);
+  } catch (e) {
+    console.warn('Could not parse JSON from LLM response, wrapping raw text:', e);
+    parsed = {
+      fitVerdict: 'Analysis Complete',
+      fitSummary: rawOutput.slice(0, 500),
+      seniorityAlignment: 'See detailed report below.',
+      keyStrengths: ['Technical background evaluated against job requirements.'],
+      criticalGaps: ['Review specific job requirements against resume details.'],
+      tailoredBulletRewrites: [],
+      interviewProbingAreas: []
+    };
+  }
+
+  return {
+    ...parsed,
+    timestamp: new Date().toISOString(),
+    modelUsed: aiConfig.provider === 'gemini' ? (aiConfig.geminiModel || 'gemini-3.8-flash') : (aiConfig.ollamaModel || 'Local Model')
+  };
+}
+

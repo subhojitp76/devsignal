@@ -570,3 +570,93 @@ Requirements:
 - Focus on web performance, accessibility, and clean responsive UI design.`
   }
 ];
+
+/**
+ * 8. Heuristic AI Analysis Generator (Deterministic fallback / offline recruiter analysis)
+ */
+export function generateHeuristicAiAnalysis(resumeData, jdText, targetTitle = '') {
+  const atsResult = calculateAtsScore(resumeData, jdText, targetTitle);
+  const matched = atsResult?.matchedSkills || [];
+  const missing = atsResult?.missingSkills || [];
+  const metrics = atsResult?.metricAudit || { ratio: 0.5 };
+  const roleScore = atsResult?.subscores?.roleAlignment || 70;
+
+  const topMatchedNames = matched.slice(0, 4).map(s => s.canonical || s.key).join(', ');
+  const topMissingNames = missing.slice(0, 3).map(s => s.canonical || s.key).join(', ');
+
+  const fitVerdict = atsResult?.totalScore >= 85 
+    ? 'Strong Match' 
+    : atsResult?.totalScore >= 70 
+    ? 'Moderate Match' 
+    : 'High Risk / Gaps';
+
+  const fitSummary = atsResult?.totalScore >= 85
+    ? `Strong technical alignment. The candidate demonstrates direct production experience with core requirements (${topMatchedNames || 'relevant stack'}). Technical screening is likely to pass, assuming system design depth holds up under scrutiny.`
+    : atsResult?.totalScore >= 70
+    ? `Viable candidate with solid engineering fundamentals, but notable keyword alignment deficits (${topMissingNames || 'core skills'}). The recruiter may hesitate unless bullets clearly highlight architectural ownership and scale.`
+    : `High risk for initial recruiter screening. Major gaps detected in expected core competencies (${topMissingNames || 'critical technologies'}). Recommended to tailor experience bullets or build project proof before applying.`;
+
+  const seniorityAlignment = roleScore >= 85
+    ? `Demonstrates senior-level scope: ownership of system components, latency optimization, and measurable engineering outcomes.`
+    : `Scope appears slightly below requested role level. More emphasis needed on cross-functional technical leadership and distributed system trade-offs.`;
+
+  const keyStrengths = [
+    matched.length > 0 
+      ? `Proven hands-on work with ${topMatchedNames}.` 
+      : 'Demonstrates baseline software engineering background.',
+    metrics.ratio >= 0.6 
+      ? `Strong quantified impact density (${Math.round(metrics.ratio * 100)}% of bullets contain measurable metrics).`
+      : 'Bullet points articulate concrete engineering tasks.',
+    atsResult?.subscores?.atsFormat === 100
+      ? 'Clean ATS structural architecture with standard headers and contact completeness.'
+      : 'Standard single-page resume density suitable for rapid recruiter scanning.'
+  ];
+
+  const criticalGaps = [
+    missing.length > 0
+      ? `Missing direct proof for key JD requirements: ${topMissingNames}.`
+      : 'No critical hard skill deficits detected.',
+    metrics.ratio < 0.6
+      ? `Only ${Math.round(metrics.ratio * 100)}% of experience bullets have quantified throughput or latency metrics.`
+      : 'Could provide deeper specifics on failure recovery and edge-case handling.'
+  ];
+
+  const rewriteSources = [
+    ...(atsResult?.recommendations?.tier2 || []),
+    ...(atsResult?.recommendations?.tier1 || [])
+  ];
+
+  const tailoredBulletRewrites = rewriteSources.slice(0, 2).map(t => ({
+    originalContext: `Work Experience — Target Skill: ${t.skill}`,
+    suggestedRewrite: t.suggestedBulletTemplate || `Architected scalable services utilizing ${t.skill}, decreasing p99 latency by 35% across 10k+ concurrent requests.`,
+    rationale: `Directly bridges ${t.skill} with production metrics demanded by hiring managers.`
+  }));
+
+  if (tailoredBulletRewrites.length === 0 && matched.length > 0) {
+    const topSkill = matched[0]?.canonical || 'Distributed Systems';
+    tailoredBulletRewrites.push({
+      originalContext: `Core Work Experience — Bullet highlighting ${topSkill}`,
+      suggestedRewrite: `Architected and tuned high-throughput services leveraging ${topSkill}, slashing p99 latency by 42% while scaling throughput to 25k+ QPS with zero downtime.`,
+      rationale: `Upgrades proven ${topSkill} experience into an executive-level STAR impact statement with clear scale benchmarks.`
+    });
+  }
+
+  const interviewProbingAreas = [
+    missing.length > 0
+      ? `Architecture Deep-Dive: "How would you design a data pipeline using ${missing[0]?.canonical || 'distributed message queues'} to guarantee exactly-once processing?"`
+      : 'Scale & Latency: "Walk me through how you benchmarked and eliminated the p99 latency bottleneck mentioned in your experience."',
+    'Failure Modes: "Describe a scenario where a downstream service suffered cascading failures and how your circuit-breaker or retry strategy handled it."'
+  ];
+
+  return {
+    fitVerdict,
+    fitSummary,
+    seniorityAlignment,
+    keyStrengths,
+    criticalGaps,
+    tailoredBulletRewrites,
+    interviewProbingAreas,
+    timestamp: new Date().toISOString(),
+    modelUsed: 'DevSignal Heuristic Engine (Deterministic)'
+  };
+}

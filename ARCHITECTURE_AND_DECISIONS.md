@@ -1272,5 +1272,53 @@ The system is designed as an all-in-one career acceleration and resume synthesis
   - Headless browser CDP testing (`scratch/test_tab_clicks.mjs`, `scratch/test_fullstack_sample.mjs`):
     - Score calculated accurately (90% for Senior Distributed Systems, 85% for Senior Full Stack).
     - Tier 1 1-click skill addition immediately updated resume state, fired toast notification, and recalculated match score.
-    - Screenshots verified: [modal_after_sample.png](file:///c:/Users/subho/OneDrive/Desktop/Projects/Resume%20Builder/scratch/modal_after_sample.png), [fullstack_sample_results.png](file:///c:/Users/subho/OneDrive/Desktop/Projects/Resume%20Builder/scratch/fullstack_sample_results.png), [tab_matched_verified.png](file:///c:/Users/subho/OneDrive/Desktop/Projects/Resume%20Builder/scratch/tab_matched_verified.png), [tab_structural_verified.png](file:///c:/Users/subho/OneDrive/Desktop/Projects/Resume%20Builder/scratch/tab_structural_verified.png), [toolbar_with_score.png](file:///c:/Users/subho/OneDrive/Desktop/Projects/Resume%20Builder/scratch/toolbar_with_score.png).
+
+---
+
+### 21. Issue 022: LLM Qualitative Recruiter Engine & Dual-Path ATS Deep Dive (October 2026)
+* **Context & Motivation**:
+  - The user requested: *"Instead of just matching the keywords have the LLM models look into both and provide some analysis along with the current things. Note: Please don't agree with every thing have objective observations."*
+  - **The Limitation of Pure Keyword Matching**: While Applicant Tracking Systems (ATS) score keyword density, human hiring managers and Principal Engineers screen resumes for architectural scope, system design depth, failure-mode awareness, and quantified business impact. Candidates with 90% keyword overlap frequently get rejected in human review if their bullets read as passive maintenance rather than proactive engineering ownership.
+  - **The Solution**: A **Dual-Path Architecture** that combines deterministic ATS keyword calculation with deep LLM qualitative evaluation of *both* the resume and the job description, delivering objective critique, candid gap warnings, STAR/XYZ tailored bullet rewrites, and anticipated technical interview probing questions.
+* **Architectural Decisions & Implementation**:
+  1. **Dual-Path Analysis Flow**:
+     - **Deterministic ATS Engine (`src/utils/atsUtils.js`)**: Runs instantaneously (0ms) on client side. Computes the 4-pillar weighted score (Skills 45%, Role Fit 20%, STAR 20%, Format 15%) and anti-stuffing multipliers.
+     - **Neural LLM Recruiter Engine (`src/services/llmService.js`)**: Evaluates the candidate's complete resume (profile, work experience, projects, skills, education) against the full text of the Job Description using configured AI providers (Google Gemini 3.8 Flash, local LM Studio, or Ollama).
+     - **Heuristic Recruiter Fallback (`generateHeuristicAiAnalysis`)**: If no API key or local LLM is active, the studio automatically generates instant, deterministic heuristic critique and interview questions so the candidate always gets high-signal feedback with zero downtime.
+  2. **Candid, Objective Prompt Engineering**:
+     - System prompt establishes the persona of a **Principal Software Engineer & Technical Hiring Manager**.
+     - Explicit instructions prohibit sycophancy, generic praise, and resume fabrication. The model is directed to identify scale deficits, shallow buzzwords, and realistic screening disqualifiers.
+     - **Structured JSON Schema**:
+       - `fitVerdict`: `"Strong Match"` | `"Moderate Match"` | `"High Risk / Gaps"`
+       - `fitSummary`: 2–3 honest sentences evaluating screening odds and red flags.
+       - `seniorityAlignment`: Scope evaluation (distinguishing senior architecture ownership from junior task execution).
+       - `keyStrengths`: Verified candidate differentiators with resume proof.
+       - `criticalGaps`: Unforgiving assessment of missing hard requirements and scale deficits.
+       - `tailoredBulletRewrites`: Concrete STAR / XYZ rewrites targeting JD nuances with 1-click clipboard copy.
+       - `interviewProbingAreas`: Tough technical questions interviewers will ask to test boundaries and detect exaggerated claims.
+  3. **Studio UI & Modal Integration (`AtsScoreModal.jsx`)**:
+     - **"Ask LLM" Action Trigger**: Added in left panel with purple gradient and sparkles icon, running parallel to deterministic ATS audit.
+     - **4th Dedicated Tab — "AI Recruiter Deep Dive"**:
+       - Tagged with an animated cyber `LLM` badge.
+       - Model badge displaying current engine (`Gemini 3.8 Flash`, `google/gemma-4-12b`, or `DevSignal Heuristic Engine`).
+       - Quick-access **"AI Settings"** button for fast key/provider configuration.
+       - Executive Fit Verdict & Seniority Alignment cards.
+       - 2-Column comparison: **Key Technical Differentiators** (emerald) vs **Critical Gaps & Screening Risks** (crimson).
+       - **Tailored Bullet Rewrites**: Monospace code-block styling with 1-click `[Copy Rewrite]` button and rationale.
+       - **Anticipated Interview Probing Areas**: Real system design questions targeting resume/JD boundary gaps.
+* **Verification & Automated Browser CDP Testing**:
+  - `cmd /c npm run build` compiled clean with 0 errors in 379ms.
+  - Automated Brave CDP test (`scratch/test_ai_recruiter_tab.mjs`):
+    - **Scenario A (Senior Distributed Systems Engineer - High Match)**:
+      - Fit Verdict: `Strong Match`.
+      - Strengths: Verified hands-on distributed systems, Go, Raft consensus, and 90% metric density.
+      - Rewrites: Generated STAR bullet for AWS/p99 latency optimization with 1-click copy.
+      - Probing Questions: Tested p99 latency benchmarking and cascading failure handling.
+      - Screenshot: [tab_ai_recruiter_overview.png](file:///c:/Users/subho/OneDrive/Desktop/Projects/Resume%20Builder/scratch/tab_ai_recruiter_overview.png), [tab_ai_recruiter_scrolled.png](file:///c:/Users/subho/OneDrive/Desktop/Projects/Resume%20Builder/scratch/tab_ai_recruiter_scrolled.png).
+    - **Scenario B (Staff Backend Platform Engineer - Real Gaps & Objective Critique)**:
+      - Fit Verdict: `Moderate Match`.
+      - Seniority Alignment: Honest critique: *"Scope appears slightly below requested role level. More emphasis needed on cross-functional technical leadership and distributed system trade-offs."*
+      - Critical Gaps: *"Missing direct proof for key JD requirements: Python."*
+      - Interview Probing: Generated tough architectural question: *"How would you design a data pipeline using Python to guarantee exactly-once processing?"*
+      - Screenshot: [staff_backend_ai_critique.png](file:///c:/Users/subho/OneDrive/Desktop/Projects/Resume%20Builder/scratch/staff_backend_ai_critique.png).
 
