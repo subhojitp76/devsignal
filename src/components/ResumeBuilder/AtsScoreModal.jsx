@@ -40,7 +40,8 @@ export default function AtsScoreModal({ isOpen, onClose }) {
     addSkillToResume,
     showToast,
     aiConfig,
-    setIsAiConfigOpen
+    setIsAiConfigOpen,
+    openLearnModal
   } = useApp();
 
   const [jobDescriptionInput, setJobDescriptionInput] = useState(targetJobDescription || '');
@@ -1109,35 +1110,58 @@ export default function AtsScoreModal({ isOpen, onClose }) {
                                   <span style={{ fontSize: '12px', fontWeight: 700, color: '#c084fc' }}>
                                     Keyword: {skillName}
                                   </span>
-                                  <button
-                                    type="button"
-                                    onClick={() => handleCopyBulletTemplate(templateText, idx)}
-                                    style={{
-                                      display: 'flex',
-                                      alignItems: 'center',
-                                      gap: '4px',
-                                      padding: '4px 10px',
-                                      borderRadius: '6px',
-                                      background: copiedIndex === idx ? 'rgba(52, 211, 153, 0.2)' : 'rgba(168, 85, 247, 0.15)',
-                                      border: copiedIndex === idx ? '1px solid rgba(52, 211, 153, 0.4)' : '1px solid rgba(168, 85, 247, 0.3)',
-                                      color: copiedIndex === idx ? '#34d399' : '#c084fc',
-                                      fontSize: '11px',
-                                      fontWeight: 600,
-                                      cursor: 'pointer'
-                                    }}
-                                  >
-                                    {copiedIndex === idx ? (
-                                      <>
-                                        <Check className="w-3 h-3" />
-                                        <span>Copied!</span>
-                                      </>
-                                    ) : (
-                                      <>
-                                        <Copy className="w-3 h-3" />
-                                        <span>Copy Template</span>
-                                      </>
-                                    )}
-                                  </button>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                    <button
+                                      type="button"
+                                      onClick={() => openLearnModal(skillName, rec.category || 'Technical Systems')}
+                                      style={{
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: '4px',
+                                        padding: '4px 9px',
+                                        borderRadius: '6px',
+                                        background: 'rgba(251, 191, 36, 0.15)',
+                                        border: '1px solid rgba(251, 191, 36, 0.35)',
+                                        color: '#fbbf24',
+                                        fontSize: '11px',
+                                        fontWeight: 600,
+                                        cursor: 'pointer'
+                                      }}
+                                      title={`Get Socratic interview & POC prompts for ${skillName}`}
+                                    >
+                                      <BookOpen className="w-3 h-3" />
+                                      <span>Learn with AI</span>
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleCopyBulletTemplate(templateText, idx)}
+                                      style={{
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: '4px',
+                                        padding: '4px 10px',
+                                        borderRadius: '6px',
+                                        background: copiedIndex === idx ? 'rgba(52, 211, 153, 0.2)' : 'rgba(168, 85, 247, 0.15)',
+                                        border: copiedIndex === idx ? '1px solid rgba(52, 211, 153, 0.4)' : '1px solid rgba(168, 85, 247, 0.3)',
+                                        color: copiedIndex === idx ? '#34d399' : '#c084fc',
+                                        fontSize: '11px',
+                                        fontWeight: 600,
+                                        cursor: 'pointer'
+                                      }}
+                                    >
+                                      {copiedIndex === idx ? (
+                                        <>
+                                          <Check className="w-3 h-3" />
+                                          <span>Copied!</span>
+                                        </>
+                                      ) : (
+                                        <>
+                                          <Copy className="w-3 h-3" />
+                                          <span>Copy Template</span>
+                                        </>
+                                      )}
+                                    </button>
+                                  </div>
                                 </div>
                                 <div
                                   style={{
@@ -1217,7 +1241,7 @@ export default function AtsScoreModal({ isOpen, onClose }) {
                                 style={{
                                   display: 'flex',
                                   alignItems: 'center',
-                                  gap: '6px',
+                                  gap: '8px',
                                   padding: '6px 12px',
                                   borderRadius: '6px',
                                   background: 'rgba(248, 113, 113, 0.12)',
@@ -1226,8 +1250,31 @@ export default function AtsScoreModal({ isOpen, onClose }) {
                                   fontSize: '12px'
                                 }}
                               >
-                                <span style={{ fontWeight: 600 }}>{skillName}</span>
-                                <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>({gap.category})</span>
+                                <div>
+                                  <span style={{ fontWeight: 600 }}>{skillName}</span>
+                                  <span style={{ fontSize: '10px', color: 'var(--text-muted)', marginLeft: '4px' }}>({gap.category})</span>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => openLearnModal(skillName, gap.category)}
+                                  style={{
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '3px',
+                                    padding: '2px 7px',
+                                    borderRadius: '4px',
+                                    background: 'rgba(251, 191, 36, 0.18)',
+                                    border: '1px solid rgba(251, 191, 36, 0.35)',
+                                    color: '#fbbf24',
+                                    fontSize: '10px',
+                                    fontWeight: 600,
+                                    cursor: 'pointer'
+                                  }}
+                                  title={`Learn ${skillName} with Socratic AI prompts`}
+                                >
+                                  <BookOpen className="w-2.5 h-2.5" />
+                                  <span>Learn</span>
+                                </button>
                               </div>
                             );
                           })}

@@ -207,6 +207,15 @@ export function AppProvider({ children }) {
   const [isAiEnhanceOpen, setIsAiEnhanceOpen] = useState(false);
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
   const [isAtsModalOpen, setIsAtsModalOpen] = useState(false);
+  const [learningModalSkill, setLearningModalSkill] = useState(null); // { skillName, category } or null
+
+  const openLearnModal = useCallback((skillName, category = '') => {
+    setLearningModalSkill({ skillName, category });
+  }, []);
+
+  const closeLearnModal = useCallback(() => {
+    setLearningModalSkill(null);
+  }, []);
 
   // URL synchronization & navigation handlers
   const setActiveTab = useCallback((tab, pushToHistory = true) => {
@@ -716,7 +725,11 @@ export function AppProvider({ children }) {
         updateTargetJobDescription,
         atsScoreResult,
         updateAtsScoreResult,
-        addSkillToResume
+        addSkillToResume,
+        // Socratic Learning & Prompt Mentorship
+        learningModalSkill,
+        openLearnModal,
+        closeLearnModal
       }}
     >
       {children}

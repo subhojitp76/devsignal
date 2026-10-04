@@ -6,6 +6,7 @@ import DevJournalTab from './components/DevJournal/DevJournalTab';
 import ResumeBuilderTab from './components/ResumeBuilder/ResumeBuilderTab';
 import ProfileModal from './components/Profile/ProfileModal';
 import AIConfigModal from './components/AIConfig/AIConfigModal';
+import SkillLearningModal from './components/Common/SkillLearningModal';
 import Toast from './components/Common/Toast';
 
 function MainLayout() {
@@ -26,6 +27,7 @@ function MainLayout() {
       {/* Global Modals & Notifications */}
       <ProfileModal />
       <AIConfigModal />
+      <SkillLearningModal />
       <Toast />
     </div>
   );

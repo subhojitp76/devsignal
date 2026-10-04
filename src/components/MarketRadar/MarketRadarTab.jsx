@@ -42,7 +42,8 @@ export default function MarketRadarTab() {
     atsScoreResult,
     resumeData,
     aiConfig,
-    addSkillToResume
+    addSkillToResume,
+    openLearnModal
   } = useApp();
 
   const [activeTopic, setActiveTopic] = useState('trending');
@@ -365,6 +366,27 @@ export default function MarketRadarTab() {
                       <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                         <button
                           type="button"
+                          onClick={() => openLearnModal(skill.name, skill.category || 'Technical Systems')}
+                          style={{
+                            padding: '4px 8px',
+                            borderRadius: '4px',
+                            background: 'rgba(251, 191, 36, 0.15)',
+                            border: '1px solid rgba(251, 191, 36, 0.3)',
+                            color: '#fbbf24',
+                            fontSize: '10.5px',
+                            fontWeight: 600,
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '3px'
+                          }}
+                          title="Open Socratic AI mock interview & coding prompts for this skill"
+                        >
+                          <BookOpen className="w-3 h-3" />
+                          <span>Learn</span>
+                        </button>
+                        <button
+                          type="button"
                           onClick={() => addSkillToResume(skill.name, skill.category || 'Technical Skills')}
                           style={{
                             padding: '4px 8px',
@@ -508,28 +530,52 @@ export default function MarketRadarTab() {
                     <span style={{ fontSize: '11px', color: '#34d399', fontWeight: 500 }}>
                       ⚡ {proj.keyMetricsToTarget}
                     </span>
-                    <button
-                      type="button"
-                      onClick={() => handleStartProjectInJournal(proj)}
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '5px',
-                        padding: '5px 12px',
-                        borderRadius: '6px',
-                        background: 'linear-gradient(135deg, rgba(56, 189, 248, 0.2) 0%, rgba(168, 85, 247, 0.2) 100%)',
-                        border: '1px solid rgba(56, 189, 248, 0.4)',
-                        color: '#38bdf8',
-                        fontSize: '11.5px',
-                        fontWeight: 600,
-                        cursor: 'pointer',
-                        transition: 'all 0.15s ease'
-                      }}
-                      title="Add blueprint as a tracking milestone into your Dev Journal"
-                    >
-                      <BookmarkPlus className="w-3.5 h-3.5" />
-                      <span>Start in Dev Journal</span>
-                    </button>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <button
+                        type="button"
+                        onClick={() => openLearnModal(proj.bridgedGaps?.[0] || proj.stack?.[0] || proj.title, 'Project Deep-Dive')}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '4px',
+                          padding: '5px 10px',
+                          borderRadius: '6px',
+                          background: 'rgba(251, 191, 36, 0.12)',
+                          border: '1px solid rgba(251, 191, 36, 0.3)',
+                          color: '#fbbf24',
+                          fontSize: '11px',
+                          fontWeight: 600,
+                          cursor: 'pointer',
+                          transition: 'all 0.15s ease'
+                        }}
+                        title="Get Socratic interview & POC coding prompts for this project stack"
+                      >
+                        <BookOpen className="w-3.5 h-3.5" />
+                        <span>Study Prompts</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleStartProjectInJournal(proj)}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '5px',
+                          padding: '5px 12px',
+                          borderRadius: '6px',
+                          background: 'linear-gradient(135deg, rgba(56, 189, 248, 0.2) 0%, rgba(168, 85, 247, 0.2) 100%)',
+                          border: '1px solid rgba(56, 189, 248, 0.4)',
+                          color: '#38bdf8',
+                          fontSize: '11.5px',
+                          fontWeight: 600,
+                          cursor: 'pointer',
+                          transition: 'all 0.15s ease'
+                        }}
+                        title="Add blueprint as a tracking milestone into your Dev Journal"
+                      >
+                        <BookmarkPlus className="w-3.5 h-3.5" />
+                        <span>Start in Dev Journal</span>
+                      </button>
+                    </div>
                   </div>
                 </div>
               ))}

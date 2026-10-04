@@ -1365,3 +1365,45 @@ The system is designed as an all-in-one career acceleration and resume synthesis
     - [phase2_milestone_after_completion.png](file:///C:/Users/subho/.gemini/antigravity-ide/brain/75e65e7d-aa78-4665-8026-7b2cbc730b76/phase2_milestone_after_completion.png)
     - [phase2_resume_synced.png](file:///C:/Users/subho/.gemini/antigravity-ide/brain/75e65e7d-aa78-4665-8026-7b2cbc730b76/phase2_resume_synced.png)
 
+---
+
+### 23. Issue 024: Socratic AI Mentorship & Engineering Prompt Engine (October 2026)
+* **Context & Objective**:
+  - Closing technical skill gaps identified by the ATS Calculator or Tech Market Radar often leaves candidates trapped in "Tutorial Hell" (reading generic documentation or passive LLM essays without acquiring real production failure intuition).
+  - The user requested: *"Before Phase 3, can we add a section to provide prompts for Gemini/claude/chatgpt/local LLM etc to teach the topics? Is it possible are there any drawbacks?"*
+  - **Objective Risk Assessment & Drawbacks Identified**:
+    1. *The Illusion of Competence*: Generic "Explain X" prompts generate passive lectures that leave candidates vulnerable when interviewers probe production edge cases.
+    2. *Frontier Cloud vs. Local LLM Disparity*: Long, multi-constraint prompts that excel on Claude 3.7 or ChatGPT o3-mini frequently derail or truncate on 7B/8B local models (Ollama/LM Studio).
+    3. *Product Scope Creep*: DevSignal is a SWE career signal engine, not a generic educational LMS.
+* **Architectural Decisions & Implementation**:
+  1. **3 Battle-Tested Socratic Learning Modes (`src/services/learningService.js`)**:
+     - **Mode A: Socratic Mock Interviewer**: Prompts the LLM to adopt the persona of a Principal Engineer and Bar Raiser who asks *one* concrete production failure scenario at a time, strictly forbidding lecture monologues, critiquing candidate trade-offs, and probing scale boundaries.
+     - **Mode B: 2-Hour Hands-On POC Lab**: Bypasses "Hello World" tutorials to guide the developer through building a testable, production-grade micro-system (test harness first, then core logic with retries and concurrency control).
+     - **Mode C: Production Failure Modes & Scale Trade-offs**: Skips basic syntax to focus 100% on what breaks at 50,000 req/sec, metric alarm thresholds, architectural remediation, and strict "when NOT to use" criteria.
+  2. **Model-Specialized Dual Formats**:
+     - *ChatGPT / Claude Format*: Deep, multi-paragraph markdown prompt leveraging large context windows.
+     - *Local LLM / Ollama Format*: Concise, single-objective prompt enforcing strict constraint adherence on 7B/8B models.
+  3. **In-App AI Execution & Offline Resilience (`SkillLearningModal.jsx`)**:
+     - Developers can click `[Copy Prompt]` to paste directly into Claude Pro or ChatGPT Plus.
+     - Alternatively, clicking `[Run with DevSignal AI]` launches an interactive Socratic session inside DevSignal using the user's configured Gemini or Local LLM provider, complete with an interactive follow-up answer box for live critique.
+     - If offline or unconfigured, an instant 0ms domain brief is served with sample interview drills and POC roadmaps.
+  4. **Contextual Integration Points**:
+     - *Tech Market Radar*: `💡 Learn` button on every missing skill card, and `💡 Study Prompts` on every Gap-Closing Portfolio Project.
+     - *ATS Match Calculator*: `💡 Learn with AI` on Tier 2 contextual templates, and `💡 Learn` on Tier 3 hard skill deficits.
+     - *Global App Context*: Managed via `openLearnModal(skillName, category)` in `AppContext.jsx` and globally mounted in `App.jsx`.
+* **Verification & Automated Testing**:
+  - `cmd /c npm run build` compiled clean with 0 errors in 351ms.
+  - End-to-end automated browser CDP testing (`scratch/test_socratic_learning.mjs`):
+    - Opened `SkillLearningModal` from Market Radar missing skill (eBPF).
+    - Verified all 3 mode switches (Mode A, Mode B, Mode C) and format toggling (Cloud vs Local).
+    - Executed in-app AI runner and verified offline Socratic brief generation with follow-up input.
+    - Verified ATS Score Calculator integration: loaded Staff Backend Platform Engineer sample JD, verified `[💡 Learn with AI]` button on Tier 2 templates and `[💡 Learn]` on Tier 3 deficit pills (Python), and verified modal opened with Python Socratic prompts.
+  - **Screenshots Captured**:
+    - [socratic_mode_a_chatgpt.png](file:///C:/Users/subho/.gemini/antigravity-ide/brain/75e65e7d-aa78-4665-8026-7b2cbc730b76/socratic_mode_a_chatgpt.png)
+    - [socratic_mode_a_local.png](file:///C:/Users/subho/.gemini/antigravity-ide/brain/75e65e7d-aa78-4665-8026-7b2cbc730b76/socratic_mode_a_local.png)
+    - [socratic_mode_b_lab.png](file:///C:/Users/subho/.gemini/antigravity-ide/brain/75e65e7d-aa78-4665-8026-7b2cbc730b76/socratic_mode_b_lab.png)
+    - [socratic_mode_c_failures.png](file:///C:/Users/subho/.gemini/antigravity-ide/brain/75e65e7d-aa78-4665-8026-7b2cbc730b76/socratic_mode_c_failures.png)
+    - [socratic_session_running.png](file:///C:/Users/subho/.gemini/antigravity-ide/brain/75e65e7d-aa78-4665-8026-7b2cbc730b76/socratic_session_running.png)
+    - [ats_modal_with_learn_buttons.png](file:///C:/Users/subho/.gemini/antigravity-ide/brain/75e65e7d-aa78-4665-8026-7b2cbc730b76/ats_modal_with_learn_buttons.png)
+    - [socratic_modal_opened_from_ats.png](file:///C:/Users/subho/.gemini/antigravity-ide/brain/75e65e7d-aa78-4665-8026-7b2cbc730b76/socratic_modal_opened_from_ats.png)
+
