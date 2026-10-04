@@ -1322,3 +1322,46 @@ The system is designed as an all-in-one career acceleration and resume synthesis
       - Interview Probing: Generated tough architectural question: *"How would you design a data pipeline using Python to guarantee exactly-once processing?"*
       - Screenshot: [staff_backend_ai_critique.png](file:///c:/Users/subho/OneDrive/Desktop/Projects/Resume%20Builder/scratch/staff_backend_ai_critique.png).
 
+---
+
+### 22. Issue 023: Phase 2 — Tech Market Radar Personalization & Dev Journal Milestone Sync (October 2026)
+* **Context & Objective**:
+  - In Phase 1, DevSignal introduced deterministic 4-pillar ATS scoring and neural LLM recruiter critiques. However, developer career growth often operates in disconnected silos: market insights remain passive reading material, project building happens without alignment to hiring requirements, and completed work is rarely translated into verified resume bullets.
+  - The goal of **Phase 2** was to close the loop:
+    1. **Personalize Tech Market Radar** to the candidate's engineering track and active ATS Target Job Description.
+    2. Provide an actionable **Gap-Closing Portfolio Blueprint Library** (hybrid rule-based catalog + on-demand LLM synthesis).
+    3. Implement an interactive **Dev Journal Milestone Workflow** where checking off a completed milestone automatically updates the resume with structured STAR bullets, registers acquired skills, and recalculates the ATS score.
+* **Key Architectural Decisions & Implementation**:
+  1. **Decision A: Dual-Source Market Radar Personalization (`src/services/marketService.js`)**:
+     - **Multi-Track Engineering Taxonomy**: Added 5 dedicated SWE taxonomies (`Backend & Systems`, `Full Stack & Web`, `Cloud Infrastructure & SRE`, `Frontend & UI Platform`, `Data Platform & Applied AI`) with curated tier-1/tier-2 skill demands and realistic salary bands.
+     - **Automatic Track Detection**: `detectEngineeringTrack(targetRole)` dynamically identifies the user's primary engineering discipline while allowing 1-click manual switching.
+     - **Active ATS Target Overlay**: When a candidate audits a job description in the ATS Calculator, Market Radar exposes an interactive **Target Job Overlay Banner**. The radar's readiness score dynamically blends track benchmarks (50%) with the active JD match (50%), and overlays exact missing skills from the target employer.
+  2. **Decision B: Hybrid Project Blueprint Engine (`src/services/llmService.js` & `marketService.js`)**:
+     - **Instant Deterministic Catalog (`PROJECT_BLUEPRINTS_CATALOG`)**: Pre-architected offline blueprints covering core SWE gaps (Distributed Raft Consensus in Go, Multi-Tier Redis Cache, Kafka Event Streaming Platform, Kubernetes SRE Chaos Controller, Full-Stack Next.js GraphQL Engine, Apache Iceberg Lakehouse, and Vector RAG Semantic Engine).
+     - **On-Demand LLM Dynamic Synthesis (`generateCustomProjectBlueprint`)**: When a candidate has specialized or niche skill gaps, clicking `✨ AI Blueprint` prompts Gemini or a local LLM to generate an end-to-end engineering specification (Architecture Diagram, Tech Stack, Step-by-Step Milestones, Target Performance Metrics, and Technical Interview Defense Points).
+     - **Offline Resilience**: Built-in deterministic fallback ensures zero failure when offline or unconfigured.
+  3. **Decision C: Dev Journal Growth Milestone Check-off & Resume Sync (`src/components/DevJournal/DevJournalTab.jsx`)**:
+     - **1-Click Dispatch**: Clicking `[🎯 Start Milestone in Dev Journal]` on any blueprint creates a dedicated growth milestone entry with structured goals, acquired skill badges, and progress tracking.
+     - **Category Filtering**: Added `🎯 Milestones` filter to the Dev Journal header bar.
+     - **Milestone Completion Modal**: Checking off an active milestone opens an interactive verification modal (`Milestone Completed!`) previewing the exact project title, STAR bullet points, and new skills to be registered.
+     - **Automated Resume & ATS Recalculation**:
+       - Injects the project into `resumeData.projects` (with automatic deduplication).
+       - Injects acquired skills into `resumeData.skillCategories`.
+       - Recomputes the ATS match score against the active job description immediately.
+       - Marks the journal milestone as `completed`.
+* **Verification & Automated Testing**:
+  - `cmd /c npm run build` passed with 0 errors in 800ms.
+  - End-to-end browser CDP automation (`scratch/test_phase2_growth_loop.mjs`):
+    - Multi-track switching verified: Backend (83% readiness) $\rightarrow$ Cloud Infrastructure (67% readiness).
+    - ATS Target Job Overlay dynamically displayed target role ("Senior Distributed Systems Engineer - Cloud Scale") and missing skill gaps.
+    - Successfully dispatched Distributed Raft consensus project milestone into Dev Journal.
+    - Verified Dev Journal milestone completion modal and 1-click sync to Resume Studio.
+    - Confirmed project appeared in `resumeData.projects` with full STAR bullet points.
+  - **Screenshots Captured**:
+    - [phase2_market_radar_tracks.png](file:///C:/Users/subho/.gemini/antigravity-ide/brain/75e65e7d-aa78-4665-8026-7b2cbc730b76/phase2_market_radar_tracks.png)
+    - [phase2_track_switched_cloud.png](file:///C:/Users/subho/.gemini/antigravity-ide/brain/75e65e7d-aa78-4665-8026-7b2cbc730b76/phase2_track_switched_cloud.png)
+    - [phase2_milestone_in_journal.png](file:///C:/Users/subho/.gemini/antigravity-ide/brain/75e65e7d-aa78-4665-8026-7b2cbc730b76/phase2_milestone_in_journal.png)
+    - [phase2_milestone_completed_modal.png](file:///C:/Users/subho/.gemini/antigravity-ide/brain/75e65e7d-aa78-4665-8026-7b2cbc730b76/phase2_milestone_completed_modal.png)
+    - [phase2_milestone_after_completion.png](file:///C:/Users/subho/.gemini/antigravity-ide/brain/75e65e7d-aa78-4665-8026-7b2cbc730b76/phase2_milestone_after_completion.png)
+    - [phase2_resume_synced.png](file:///C:/Users/subho/.gemini/antigravity-ide/brain/75e65e7d-aa78-4665-8026-7b2cbc730b76/phase2_resume_synced.png)
+

@@ -393,3 +393,99 @@ Provide your analysis in strictly valid JSON format with this exact structure:
   };
 }
 
+/**
+ * Generates a tailored engineering portfolio project blueprint targeting a specific skill gap
+ */
+export async function generateCustomProjectBlueprint({
+  skillGap = 'Distributed Systems',
+  targetRole = 'Senior Software Engineer',
+  currentSkills = [],
+  aiConfig = {}
+}) {
+  const hasAi = (aiConfig.provider === 'gemini' && aiConfig.geminiApiKey?.trim()) ||
+                (aiConfig.provider === 'ollama' && aiConfig.ollamaBaseUrl);
+
+  if (!hasAi) {
+    return generateHeuristicProjectBlueprint(skillGap, targetRole);
+  }
+
+  const systemInstruction = `You are a Staff Software Architect & Principal Technical Interviewer.
+Your task is to design a high-signal, resume-worthy engineering project blueprint that bridges a specific technical skill gap for a candidate.
+The project must NOT be a toy tutorial or clone; it must address real-world system architecture, high concurrency, resilience, or data scale.
+Provide strictly valid JSON with no markdown wrapping or preamble.`;
+
+  const prompt = `Design an architectural project blueprint to bridge this skill gap:
+TARGET SKILL GAP: ${skillGap}
+TARGET ROLE: ${targetRole}
+CANDIDATE EXISTING SKILLS: ${currentSkills.slice(0, 8).join(', ') || 'Standard Software Engineering'}
+
+Respond with this exact JSON structure:
+{
+  "title": "Concise, impressive production project name",
+  "difficulty": "Intermediate" | "Advanced",
+  "targetSkills": ["${skillGap}", "complementary skill 1", "complementary skill 2"],
+  "stack": ["3-5 specific modern tools and frameworks"],
+  "objective": "2 sentences outlining the engineering problem, concurrency challenge, and architecture.",
+  "keyMetricsToTarget": "Specific quantifiable benchmarks (throughput, p99 latency reduction, or scale)",
+  "starterMilestones": [
+    "Phase 1: Core setup and foundational protocol/service",
+    "Phase 2: Concurrency, caching, or distributed resilience",
+    "Phase 3: Automated load testing, benchmarking, and telemetry"
+  ],
+  "interviewTalkingPoints": "A key architectural trade-off or failure mode to highlight in technical screens."
+}`;
+
+  try {
+    const rawOutput = await generateLlmCompletion({
+      prompt,
+      systemInstruction,
+      aiConfig
+    });
+
+    let clean = rawOutput.trim();
+    if (clean.startsWith('```')) {
+      clean = clean.replace(/^```(?:json)?\s*\n?/, '').replace(/\n?```\s*$/, '');
+    }
+    const firstBrace = clean.indexOf('{');
+    const lastBrace = clean.lastIndexOf('}');
+    if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
+      clean = clean.substring(firstBrace, lastBrace + 1);
+    }
+    const parsed = JSON.parse(clean);
+    return {
+      id: `bp-custom-${Date.now()}`,
+      ...parsed,
+      isAiGenerated: true,
+      modelUsed: aiConfig.provider === 'gemini' ? (aiConfig.geminiModel || 'gemini-3.8-flash') : 'Local Model'
+    };
+  } catch (err) {
+    console.warn('Failed to generate AI custom blueprint, falling back to heuristic engine:', err);
+    return generateHeuristicProjectBlueprint(skillGap, targetRole);
+  }
+}
+
+/**
+ * Deterministic heuristic project blueprint generator (Instant offline fallback)
+ */
+export function generateHeuristicProjectBlueprint(skillGap = 'Distributed Systems', targetRole = 'Senior Backend Engineer') {
+  const cleanSkill = skillGap.trim();
+  return {
+    id: `bp-heur-${Date.now()}`,
+    title: `High-Throughput ${cleanSkill} Resiliency Engine`,
+    difficulty: 'Advanced',
+    targetSkills: [cleanSkill, 'Distributed Systems', 'Docker', 'Observability'],
+    stack: [cleanSkill, 'Go or Python', 'Prometheus', 'Docker Compose'],
+    objective: `Architect an event-driven system leveraging ${cleanSkill} to ensure zero data loss under simulated network partitions and high traffic spikes.`,
+    keyMetricsToTarget: 'Benchmark at 20k+ operations/sec with sub-15ms p99 latency and automated health self-healing.',
+    starterMilestones: [
+      `Phase 1: Deploy baseline service scaffolding integrated with ${cleanSkill} client drivers.`,
+      `Phase 2: Implement idempotency keys, circuit-breaker backoffs, and partition failover.`,
+      `Phase 3: Run load stress tests with automated Prometheus SLO metric dashboards.`
+    ],
+    interviewTalkingPoints: `Discuss how ${cleanSkill} handles distributed consensus and how retry storms were mitigated with exponential jitter.`,
+    isAiGenerated: false,
+    modelUsed: 'DevSignal Heuristic Engine (Deterministic)'
+  };
+}
+
+

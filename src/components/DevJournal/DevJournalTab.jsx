@@ -7,6 +7,7 @@ import {
   generateFollowUpUpdatePrompt, 
   parseMilestoneUpdate 
 } from '../../services/parserService';
+import { calculateAtsScore } from '../../utils/atsUtils';
 import { 
   BookOpen, 
   Copy, 
@@ -35,7 +36,10 @@ import {
   CornerDownRight,
   Edit3,
   Save,
-  X
+  X,
+  CheckCircle2,
+  Target,
+  Award
 } from 'lucide-react';
 
 export default function DevJournalTab() {
@@ -49,8 +53,20 @@ export default function DevJournalTab() {
     updateResumeData,
     aiConfig, 
     showToast,
-    setActiveTab
+    setActiveTab,
+    targetJobDescription,
+    atsScoreResult,
+    updateAtsScoreResult,
+    addSkillToResume
   } = useApp();
+
+  // Milestone Completion Modal State
+  const [completingMilestoneEntry, setCompletingMilestoneEntry] = useState(null);
+  const [milestoneSyncOptions, setMilestoneSyncOptions] = useState({
+    pushProject: true,
+    addSkills: true,
+    recalcAts: true
+  });
 
   const [pastedDigest, setPastedDigest] = useState('');
   const [projectCustomLink, setProjectCustomLink] = useState('');
@@ -338,6 +354,121 @@ export default function DevJournalTab() {
     });
 
     showToast(`Added accomplishment to Resume Experience!`, 'success');
+  };
+
+  // Milestone Completion Workflow
+  const handleStartCompleteMilestone = (entry) => {
+    setCompletingMilestoneEntry(entry);
+    setMilestoneSyncOptions({
+      pushProject: true,
+      addSkills: true,
+      recalcAts: Boolean(targetJobDescription)
+    });
+  };
+
+  const handleConfirmCompleteMilestone = () => {
+    if (!completingMilestoneEntry) return;
+
+    const entry = completingMilestoneEntry;
+    const cleanProjectName = (entry.title || 'Personal Project').replace(/^(?:Started Project|Project Milestone):\s*/i, '');
+    const techStackStr = Array.isArray(entry.techStack) 
+      ? entry.techStack.join(', ') 
+      : (entry.techStack || 'Engineering');
+
+    const bulletList = (entry.bullets && entry.bullets.length > 0)
+      ? entry.bullets
+      : [
+          entry.summary,
+          entry.impact ? `Impact: ${entry.impact}` : null
+        ].filter(Boolean);
+
+    // 1. Sync to Resume Projects
+    if (milestoneSyncOptions.pushProject) {
+      const newProject = {
+        id: `proj-${Date.now()}`,
+        name: cleanProjectName,
+        techStack: techStackStr,
+        link: entry.link || '',
+        bullets: bulletList
+      };
+
+      updateResumeData(prev => {
+        const currentProjects = prev.projects || [];
+        const normName = cleanProjectName.trim().toLowerCase();
+        const normLink = (newProject.link || '').trim().toLowerCase().replace(/^https?:\/\//, '').replace(/\/$/, '');
+
+        const existingIdx = currentProjects.findIndex(p => {
+          const pName = (p.name || '').trim().toLowerCase();
+          const pLink = (p.link || '').trim().toLowerCase().replace(/^https?:\/\//, '').replace(/\/$/, '');
+          return (normName && pName === normName) || (normLink && pLink && normLink === pLink);
+        });
+
+        let updatedProjects;
+        if (existingIdx >= 0) {
+          updatedProjects = [...currentProjects];
+          updatedProjects[existingIdx] = {
+            ...updatedProjects[existingIdx],
+            ...newProject,
+            id: updatedProjects[existingIdx].id
+          };
+        } else {
+          updatedProjects = [...currentProjects, newProject];
+        }
+
+        return {
+          ...prev,
+          projects: deduplicateProjects(updatedProjects)
+        };
+      });
+    }
+
+    // 2. Add acquired skills to Resume Skills Category
+    const skillsToAdd = Array.isArray(entry.targetSkillGaps) && entry.targetSkillGaps.length > 0
+      ? entry.targetSkillGaps
+      : (Array.isArray(entry.techStack) ? entry.techStack : []);
+
+    if (milestoneSyncOptions.addSkills && skillsToAdd.length > 0) {
+      skillsToAdd.forEach(sk => {
+        addSkillToResume(sk, 'Technical Skills');
+      });
+    }
+
+    // 3. Mark Journal Entry as Completed
+    const updatedEntry = {
+      ...entry,
+      milestoneStatus: 'completed',
+      completedAt: new Date().toISOString()
+    };
+    updateJournalEntry(updatedEntry);
+
+    // 4. Recalculate ATS Score if target JD is active
+    if (milestoneSyncOptions.recalcAts && targetJobDescription) {
+      setTimeout(() => {
+        try {
+          const updatedResume = {
+            ...resumeData,
+            projects: [
+              ...(resumeData.projects || []),
+              {
+                id: `proj-${Date.now()}`,
+                name: cleanProjectName,
+                techStack: techStackStr,
+                bullets: bulletList
+              }
+            ]
+          };
+          const newAts = calculateAtsScore(updatedResume, targetJobDescription, atsScoreResult?.targetTitle || '');
+          if (newAts) {
+            updateAtsScoreResult(newAts);
+          }
+        } catch (e) {
+          console.warn('Could not auto-recalculate ATS score:', e);
+        }
+      }, 100);
+    }
+
+    showToast(`🎉 Milestone "${cleanProjectName}" achieved! Synced to Resume and verified!`, 'success');
+    setCompletingMilestoneEntry(null);
   };
 
   // Quick push journal entry into Resume Featured Projects
@@ -785,6 +916,8 @@ export default function DevJournalTab() {
     let matchesCategory = false;
     if (selCat === 'all') {
       matchesCategory = true;
+    } else if (selCat.includes('milestone')) {
+      matchesCategory = Boolean(entry.isMilestone || cat.includes('milestone') || rawCat.toLowerCase().includes('milestone'));
     } else if (selCat.includes('personal') || selCat.includes('project')) {
       matchesCategory = cat.includes('personal') || cat.includes('project') || rawCat.toLowerCase().includes('project');
     } else {
@@ -1339,7 +1472,7 @@ export default function DevJournalTab() {
 
             {/* Category Filter Pills */}
             <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
-              {['All', 'Personal Project', 'Feature', 'Architecture', 'Optimization', 'Bug Fix'].map(cat => (
+              {['All', '🎯 Milestones', 'Personal Project', 'Feature', 'Architecture', 'Optimization', 'Bug Fix'].map(cat => (
                 <button
                   key={cat}
                   onClick={() => setSelectedCategory(cat)}
@@ -1808,6 +1941,73 @@ export default function DevJournalTab() {
                   </div>
                 </div>
 
+                {/* Milestone Goal & Completion Bar */}
+                {entry.isMilestone && (
+                  <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    flexWrap: 'wrap',
+                    gap: '8px',
+                    padding: '8px 12px',
+                    borderRadius: '8px',
+                    background: entry.milestoneStatus === 'completed'
+                      ? 'rgba(52, 211, 153, 0.08)'
+                      : 'rgba(251, 191, 36, 0.08)',
+                    border: entry.milestoneStatus === 'completed'
+                      ? '1px solid rgba(52, 211, 153, 0.3)'
+                      : '1px solid rgba(251, 191, 36, 0.3)',
+                    marginTop: '2px',
+                    marginBottom: '4px'
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                      <span className={entry.milestoneStatus === 'completed' ? 'badge badge-emerald' : 'badge badge-amber'} style={{ fontSize: '11px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                        {entry.milestoneStatus === 'completed' ? (
+                          <>
+                            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                            <span>Milestone Completed</span>
+                          </>
+                        ) : (
+                          <>
+                            <Target className="w-3.5 h-3.5 text-amber-400" />
+                            <span>Active Growth Milestone</span>
+                          </>
+                        )}
+                      </span>
+                      {entry.targetSkillGaps && entry.targetSkillGaps.length > 0 && (
+                        <span style={{ fontSize: '11px', color: '#cbd5e1' }}>
+                          Targeting: <strong style={{ color: '#38bdf8' }}>{entry.targetSkillGaps.join(', ')}</strong>
+                        </span>
+                      )}
+                    </div>
+
+                    {entry.milestoneStatus !== 'completed' && (
+                      <button
+                        type="button"
+                        onClick={() => handleStartCompleteMilestone(entry)}
+                        style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '5px',
+                          padding: '5px 12px',
+                          borderRadius: '6px',
+                          background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+                          color: '#ffffff',
+                          fontWeight: 700,
+                          fontSize: '11px',
+                          border: 'none',
+                          cursor: 'pointer',
+                          boxShadow: '0 0 10px rgba(16, 185, 129, 0.35)'
+                        }}
+                        title="Mark this milestone completed and sync verified achievements to your Resume"
+                      >
+                        <Check className="w-3.5 h-3.5" />
+                        <span>Complete &amp; Sync to Resume</span>
+                      </button>
+                    )}
+                  </div>
+                )}
+
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px' }}>
                   <h3 style={{ fontSize: '15px', fontWeight: 600, color: '#f8fafc', margin: 0 }}>
                     {entry.title}
@@ -2216,6 +2416,170 @@ export default function DevJournalTab() {
         )}
       </div>
 
+      {/* Milestone Completion Confirmation Modal */}
+      {completingMilestoneEntry && (
+        <div style={{
+          position: 'fixed',
+          inset: 0,
+          background: 'rgba(0, 0, 0, 0.8)',
+          backdropFilter: 'blur(8px)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 9999,
+          padding: '20px'
+        }}>
+          <div style={{
+            background: '#090d16',
+            border: '1px solid rgba(52, 211, 153, 0.4)',
+            borderRadius: '16px',
+            maxWidth: '580px',
+            width: '100%',
+            maxHeight: '90vh',
+            overflowY: 'auto',
+            padding: '24px',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '16px',
+            boxShadow: '0 0 40px rgba(52, 211, 153, 0.2)'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <div style={{
+                  width: '38px',
+                  height: '38px',
+                  borderRadius: '10px',
+                  background: 'rgba(52, 211, 153, 0.15)',
+                  border: '1px solid rgba(52, 211, 153, 0.3)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  color: '#34d399'
+                }}>
+                  <Award className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 style={{ fontSize: '16px', fontWeight: 700, color: '#f8fafc', margin: 0 }}>
+                    Milestone Completed!
+                  </h3>
+                  <span style={{ fontSize: '11.5px', color: 'var(--text-muted)' }}>
+                    Convert completed milestone into verified resume proof
+                  </span>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setCompletingMilestoneEntry(null)}
+                style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer' }}
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div style={{
+              background: 'rgba(15, 23, 42, 0.7)',
+              border: '1px solid var(--border-subtle)',
+              borderRadius: '12px',
+              padding: '16px',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '10px'
+            }}>
+              <div style={{ fontSize: '14.5px', fontWeight: 600, color: '#38bdf8' }}>
+                {completingMilestoneEntry.title}
+              </div>
+              <p style={{ fontSize: '12.5px', color: 'var(--text-secondary)', lineHeight: 1.45, margin: 0 }}>
+                {completingMilestoneEntry.summary}
+              </p>
+
+              {completingMilestoneEntry.impact && (
+                <div style={{ fontSize: '12px', color: '#34d399', fontWeight: 600 }}>
+                  ⚡ {completingMilestoneEntry.impact}
+                </div>
+              )}
+
+              {/* Sync Options */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '8px', paddingTop: '10px', borderTop: '1px solid var(--border-subtle)' }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px', color: '#f8fafc', cursor: 'pointer' }}>
+                  <input
+                    type="checkbox"
+                    checked={milestoneSyncOptions.pushProject}
+                    onChange={e => setMilestoneSyncOptions(p => ({ ...p, pushProject: e.target.checked }))}
+                    style={{ width: '15px', height: '15px', accentColor: '#34d399' }}
+                  />
+                  <span>Sync to Resume Featured Projects section</span>
+                </label>
+
+                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px', color: '#f8fafc', cursor: 'pointer' }}>
+                  <input
+                    type="checkbox"
+                    checked={milestoneSyncOptions.addSkills}
+                    onChange={e => setMilestoneSyncOptions(p => ({ ...p, addSkills: e.target.checked }))}
+                    style={{ width: '15px', height: '15px', accentColor: '#34d399' }}
+                  />
+                  <span>
+                    Add acquired skills ({((completingMilestoneEntry.targetSkillGaps || []).length > 0 ? completingMilestoneEntry.targetSkillGaps : completingMilestoneEntry.techStack || []).join(', ')}) to Resume Skills Category
+                  </span>
+                </label>
+
+                {targetJobDescription && (
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px', color: '#38bdf8', cursor: 'pointer' }}>
+                    <input
+                      type="checkbox"
+                      checked={milestoneSyncOptions.recalcAts}
+                      onChange={e => setMilestoneSyncOptions(p => ({ ...p, recalcAts: e.target.checked }))}
+                      style={{ width: '15px', height: '15px', accentColor: '#38bdf8' }}
+                    />
+                    <span>Recalculate ATS Match Score against active target JD</span>
+                  </label>
+                )}
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+              <button
+                type="button"
+                onClick={() => setCompletingMilestoneEntry(null)}
+                style={{
+                  padding: '8px 16px',
+                  borderRadius: '8px',
+                  background: 'rgba(30, 41, 59, 0.6)',
+                  border: '1px solid var(--border-medium)',
+                  color: 'var(--text-secondary)',
+                  fontSize: '12px',
+                  cursor: 'pointer'
+                }}
+              >
+                Cancel
+              </button>
+
+              <button
+                type="button"
+                onClick={handleConfirmCompleteMilestone}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  padding: '8px 20px',
+                  borderRadius: '8px',
+                  background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+                  color: '#ffffff',
+                  fontWeight: 700,
+                  fontSize: '12px',
+                  border: 'none',
+                  cursor: 'pointer',
+                  boxShadow: '0 0 16px rgba(16, 185, 129, 0.4)'
+                }}
+              >
+                <Check className="w-4 h-4" />
+                <span>Confirm &amp; Update Resume</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }
+

@@ -127,33 +127,249 @@ export async function fetchTechNews(topic = 'trending', source = 'all') {
 }
 
 /**
- * Skill Gap & Engineering Project Recommender
+ * Multi-Track Engineering Taxonomies
  */
-export function analyzeMarketReadiness(profile) {
-  const targetRole = (profile.targetRole || 'Backend Engineer').toLowerCase();
-  const currentSkills = (profile.coreSkills || []).map(s => s.toLowerCase());
+export const ENGINEERING_TRACKS = [
+  {
+    id: 'backend',
+    label: 'Backend & Systems',
+    rolePattern: /backend|systems|distributed|server|infrastructure/i,
+    description: 'High concurrency, consensus protocols, data storage engines, and low-latency microservices.',
+    benchmarkSkills: [
+      { name: 'Distributed Systems', category: 'Architecture', weight: 'High', reason: 'High concurrency, consensus & partitioning are critical for senior roles' },
+      { name: 'Go (Golang)', category: 'Language', weight: 'High', reason: 'Industry standard for modern cloud infrastructure & microservices' },
+      { name: 'Rust', category: 'Language', weight: 'Medium', reason: 'Rapidly growing for memory safety & low-latency systems' },
+      { name: 'Kafka / Event Streaming', category: 'Messaging', weight: 'High', reason: 'Asynchronous event decoupling is required in high-scale systems' },
+      { name: 'Redis / In-Memory Systems', category: 'Caching', weight: 'High', reason: 'Sub-millisecond data caching & distributed locking' },
+      { name: 'PostgreSQL Internals & Query Optimization', category: 'Database', weight: 'High', reason: 'Indexes, explain plans, partitioning, and connection pools' },
+      { name: 'Kubernetes & Container Orchestration', category: 'DevOps', weight: 'High', reason: 'De-facto cloud-native deployment runtime' },
+      { name: 'gRPC / Protobuf', category: 'Networking', weight: 'Medium', reason: 'High-speed binary RPC communication between internal services' },
+      { name: 'eBPF / Observability', category: 'Systems', weight: 'Medium', reason: 'Next-gen kernel-level performance tracing and network inspection' }
+    ]
+  },
+  {
+    id: 'fullstack',
+    label: 'Full Stack & Web',
+    rolePattern: /full\s*stack|web|software engineer|product engineer/i,
+    description: 'End-to-end applications, real-time client state, resilient backend APIs, and database design.',
+    benchmarkSkills: [
+      { name: 'TypeScript', category: 'Language', weight: 'High', reason: 'Type safety standard across modern fullstack applications' },
+      { name: 'React / Next.js', category: 'Frontend', weight: 'High', reason: 'Server components, client hydration, and rich interactive UIs' },
+      { name: 'Node.js / Go', category: 'Backend', weight: 'High', reason: 'High-throughput microservices and concurrent async runtimes' },
+      { name: 'GraphQL / REST APIs', category: 'API Design', weight: 'High', reason: 'Contract-first client-server data fetching and mutation' },
+      { name: 'PostgreSQL / SQL', category: 'Database', weight: 'High', reason: 'Relational data modeling, transactions, and migration strategies' },
+      { name: 'Redis Caching', category: 'Performance', weight: 'Medium', reason: 'Session state, rate limiting, and cache invalidation' },
+      { name: 'Docker & CI/CD', category: 'DevOps', weight: 'High', reason: 'Containerized dev environments and automated deploy pipelines' },
+      { name: 'WebSockets / Real-time', category: 'Networking', weight: 'Medium', reason: 'Bi-directional live updates and event dispatching' }
+    ]
+  },
+  {
+    id: 'cloud_devops',
+    label: 'Cloud Infrastructure & SRE',
+    rolePattern: /cloud|devops|sre|platform|site reliability|infrastructure/i,
+    description: 'Cloud architecture, Infrastructure as Code, Kubernetes clusters, and automated observability.',
+    benchmarkSkills: [
+      { name: 'Kubernetes', category: 'Orchestration', weight: 'High', reason: 'Production container scheduling, ingress, and GitOps deployments' },
+      { name: 'Terraform / IaC', category: 'Infrastructure', weight: 'High', reason: 'Declarative immutable multi-cloud infrastructure provisioning' },
+      { name: 'AWS / GCP Cloud Architecture', category: 'Cloud', weight: 'High', reason: 'VPC peering, IAM policies, serverless, and managed databases' },
+      { name: 'Docker / Containers', category: 'Containers', weight: 'High', reason: 'Multi-stage builds, rootless containers, and image optimization' },
+      { name: 'Prometheus & Grafana', category: 'Observability', weight: 'High', reason: 'Telemetry metrics, alerting thresholds, and SLO/SLI tracking' },
+      { name: 'CI/CD Pipelines (GitHub Actions)', category: 'Automation', weight: 'High', reason: 'Automated test suites, security scanning, and blue/green deploys' },
+      { name: 'Linux Kernel & Bash Scripting', category: 'OS', weight: 'Medium', reason: 'System debugging, networking diagnostics, and shell automation' },
+      { name: 'Service Mesh (Istio / Envoy)', category: 'Networking', weight: 'Medium', reason: 'mTLS encryption, traffic splitting, and distributed tracing' }
+    ]
+  },
+  {
+    id: 'frontend',
+    label: 'Frontend & UI Platform',
+    rolePattern: /frontend|ui|ux|client|web developer/i,
+    description: 'Design systems, client-side performance, accessibility, and high-fidelity interactive web apps.',
+    benchmarkSkills: [
+      { name: 'TypeScript', category: 'Language', weight: 'High', reason: 'Strict type contracts and resilient component architectures' },
+      { name: 'React Architecture & State', category: 'Framework', weight: 'High', reason: 'Concurrent features, custom hooks, and state management' },
+      { name: 'Core Web Vitals & Performance', category: 'Performance', weight: 'High', reason: 'LCP/INP optimization, code splitting, and bundle size reduction' },
+      { name: 'Tailwind CSS & Design Systems', category: 'Styling', weight: 'High', reason: 'Scalable token systems, dark mode, and responsive layouts' },
+      { name: 'Web Accessibility (WCAG / a11y)', category: 'Compliance', weight: 'High', reason: 'Keyboard navigation, ARIA attributes, and screen-reader support' },
+      { name: 'Vite / Webpack Build Tooling', category: 'Tooling', weight: 'Medium', reason: 'ESM bundling, tree-shaking, and dev server optimization' },
+      { name: 'Component Testing (Vitest / Playwright)', category: 'Testing', weight: 'High', reason: 'Automated regression prevention and end-to-end user flows' },
+      { name: 'WebSockets & Optimistic UI', category: 'Interaction', weight: 'Medium', reason: 'Real-time collaborative features with rollback capabilities' }
+    ]
+  },
+  {
+    id: 'data_ml',
+    label: 'Data Platform & Applied AI',
+    rolePattern: /data|ml|machine learning|ai|analytics|pipeline/i,
+    description: 'High-volume data pipelines, feature stores, applied LLM embeddings, and model serving.',
+    benchmarkSkills: [
+      { name: 'Python', category: 'Language', weight: 'High', reason: 'Primary language for data manipulation, ETL, and AI integration' },
+      { name: 'Apache Spark / Distributed Data', category: 'Processing', weight: 'High', reason: 'Petabyte-scale distributed batch and streaming computation' },
+      { name: 'Apache Kafka / Flink', category: 'Streaming', weight: 'High', reason: 'Real-time event streams and stateful stream processing' },
+      { name: 'PostgreSQL / Snowflake / BigQuery', category: 'Data Warehouse', weight: 'High', reason: 'Columnar storage, analytical queries, and dimensional modeling' },
+      { name: 'Vector Databases (Pinecone / Qdrant / Pgvector)', category: 'Applied AI', weight: 'High', reason: 'Semantic similarity search, RAG pipelines, and embeddings' },
+      { name: 'LLM Orchestration (LangChain / LlamaIndex)', category: 'Applied AI', weight: 'Medium', reason: 'Prompt chaining, agentic tools, and context window management' },
+      { name: 'Docker & Containerization', category: 'DevOps', weight: 'Medium', reason: 'Reproducible model environments and containerized workers' },
+      { name: 'Data Quality & Testing (dbt / Great Expectations)', category: 'Governance', weight: 'Medium', reason: 'Automated data assertions, lineage, and documentation' }
+    ]
+  }
+];
 
-  // Industry demand radar for backend / systems engineering
-  const benchmarkSkills = [
-    { name: 'Distributed Systems', category: 'Architecture', weight: 'High', reason: 'High concurrency, consensus & partitioning are critical for senior roles' },
-    { name: 'Go (Golang)', category: 'Language', weight: 'High', reason: 'Industry standard for modern cloud infrastructure & microservices' },
-    { name: 'Rust', category: 'Language', weight: 'Medium', reason: 'Rapidly growing for memory safety & low-latency systems' },
-    { name: 'Kafka / Event Streaming', category: 'Messaging', weight: 'High', reason: 'Asynchronous event decoupling is required in high-scale systems' },
-    { name: 'Redis / In-Memory Systems', category: 'Caching', weight: 'High', reason: 'Sub-millisecond data caching & distributed locking' },
-    { name: 'PostgreSQL Internals & Query Optimization', category: 'Database', weight: 'High', reason: 'Indexes, explain plans, partitioning, and connection pools' },
-    { name: 'Kubernetes & Container Orchestration', category: 'DevOps', weight: 'High', reason: 'De-facto cloud-native deployment runtime' },
-    { name: 'gRPC / Protobuf', category: 'Networking', weight: 'Medium', reason: 'High-speed binary RPC communication between internal services' },
-    { name: 'eBPF / Observability', category: 'Systems', weight: 'Medium', reason: 'Next-gen kernel-level performance tracing and network inspection' }
-  ];
+/**
+ * Detect the candidate's engineering track based on role title or resume content
+ */
+export function detectEngineeringTrack(targetRole = '') {
+  const role = (targetRole || '').trim().toLowerCase();
+  for (const track of ENGINEERING_TRACKS) {
+    if (track.rolePattern.test(role)) {
+      return track.id;
+    }
+  }
+  return 'backend';
+}
 
+/**
+ * Skill-Indexed Portfolio Project Blueprints Catalog
+ */
+export const PROJECT_BLUEPRINTS_CATALOG = [
+  {
+    id: 'bp-raft',
+    title: 'Decentralized Raft Consensus Key-Value Engine',
+    difficulty: 'Advanced',
+    targetSkills: ['Distributed Systems', 'Raft Consensus', 'Go', 'Rust'],
+    stack: ['Go or Rust', 'Raft Protocol', 'gRPC', 'LSM-Tree / BadgerDB'],
+    objective: 'Implement leader election, log replication, and failover across 3-5 nodes with zero data loss.',
+    keyMetricsToTarget: 'Sub-10ms write commits, seamless recovery under partitioned network chaos.',
+    starterMilestones: [
+      'Phase 1: Build leader election with randomized election timeouts and heartbeat timers.',
+      'Phase 2: Implement append-entries log replication with commit index consensus.',
+      'Phase 3: Add snapshotting and Jepsen-style network partition chaos tests.'
+    ]
+  },
+  {
+    id: 'bp-rate-limiter',
+    title: 'High-Throughput Distributed Rate Limiter',
+    difficulty: 'Intermediate',
+    targetSkills: ['Redis', 'Go', 'Microservices', 'Distributed Systems'],
+    stack: ['Go', 'Redis Cluster', 'Sliding Window Counter', 'Docker'],
+    objective: 'Build an ultra-low latency middleware service managing rate limits across multi-tenant API clients.',
+    keyMetricsToTarget: 'Benchmark under 50k req/sec with <2ms added latency overhead.',
+    starterMilestones: [
+      'Phase 1: Implement memory-efficient sliding-window counter in Lua script inside Redis.',
+      'Phase 2: Build high-concurrency Go HTTP middleware with atomic fallback circuit-breaker.',
+      'Phase 3: Benchmark with Vegeta / k6 to prove sub-2ms p99 latency under 50k QPS.'
+    ]
+  },
+  {
+    id: 'bp-kafka-cdc',
+    title: 'Event-Driven Change-Data-Capture (CDC) Pipeline',
+    difficulty: 'Advanced',
+    targetSkills: ['Kafka', 'PostgreSQL', 'Distributed Systems', 'Docker'],
+    stack: ['PostgreSQL WAL', 'Debezium / Kafka', 'Elasticsearch / OpenSearch'],
+    objective: 'Stream database row mutations into an analytical search index in real-time with at-least-once delivery.',
+    keyMetricsToTarget: '<200ms end-to-end sync delay with automated poison-pill dead-letter queues.',
+    starterMilestones: [
+      'Phase 1: Configure PostgreSQL logical replication slots and Debezium CDC connector.',
+      'Phase 2: Build Kafka consumer microservice with idempotency keys and error retry backoff.',
+      'Phase 3: Synchronize to OpenSearch index with sub-200ms latency verification.'
+    ]
+  },
+  {
+    id: 'bp-terraform-aws',
+    title: 'Multi-Region GitOps Cloud Infrastructure Platform',
+    difficulty: 'Advanced',
+    targetSkills: ['Terraform', 'AWS', 'Kubernetes', 'CI/CD Pipelines'],
+    stack: ['Terraform', 'AWS (EKS, VPC, RDS)', 'GitHub Actions', 'ArgoCD'],
+    objective: 'Architect automated multi-environment infrastructure-as-code with zero-drift enforcement.',
+    keyMetricsToTarget: '100% automated blue/green canary deployments with <5 min rollback SLA.',
+    starterMilestones: [
+      'Phase 1: Modularize Terraform code for VPC peering, private subnets, and EKS cluster.',
+      'Phase 2: Implement GitHub Actions workflow for automated `terraform plan` and security linting.',
+      'Phase 3: Deploy ArgoCD GitOps operator with automated canary progression and Prometheus rollback.'
+    ]
+  },
+  {
+    id: 'bp-graphql-federation',
+    title: 'Enterprise GraphQL Federation Subgraph Gateway',
+    difficulty: 'Intermediate',
+    targetSkills: ['GraphQL', 'TypeScript', 'Node.js', 'Redis'],
+    stack: ['TypeScript', 'Apollo Federation / GraphQL Mesh', 'Node.js / Express', 'Redis'],
+    objective: 'Unify 3 independent REST/gRPC backend microservices behind a unified, cached GraphQL supergraph.',
+    keyMetricsToTarget: '60% reduction in client network requests; sub-25ms response time on aggregated queries.',
+    starterMilestones: [
+      'Phase 1: Define federated GraphQL schema types with entity resolvers and keys.',
+      'Phase 2: Implement Redis subgraph response caching and DataLoader batching to eliminate N+1 queries.',
+      'Phase 3: Add schema checks in CI to block breaking API changes.'
+    ]
+  },
+  {
+    id: 'bp-realtime-analytics',
+    title: 'Real-Time Fullstack Metrics Streaming Dashboard',
+    difficulty: 'Intermediate',
+    targetSkills: ['React', 'TypeScript', 'WebSockets', 'Tailwind CSS'],
+    stack: ['React', 'TypeScript', 'WebSockets', 'Vite', 'Recharts / Chart.js'],
+    objective: 'Develop high-frequency telemetry dashboard handling 500+ live chart updates/sec without frame drops.',
+    keyMetricsToTarget: 'Maintains steady 60 FPS during high-frequency WebSocket bursts with 0 layout thrashing.',
+    starterMilestones: [
+      'Phase 1: Build buffered WebSocket client with exponential reconnect and binary message unpacking.',
+      'Phase 2: Implement virtualized data windowing to prevent DOM memory bloat over prolonged sessions.',
+      'Phase 3: Optimize rendering using Web Workers and Canvas for zero-jank frame pacing.'
+    ]
+  },
+  {
+    id: 'bp-rag-vector-db',
+    title: 'Hybrid RAG Knowledge Engine with Vector Embeddings',
+    difficulty: 'Advanced',
+    targetSkills: ['Python', 'Vector Databases', 'Applied AI', 'Docker'],
+    stack: ['Python', 'FastAPI', 'Qdrant / Pgvector', 'OpenAI / Gemini Embeddings', 'Docker'],
+    objective: 'Build semantic search and contextual retrieval pipeline with hybrid BM25 + dense vector ranking.',
+    keyMetricsToTarget: 'Sub-40ms semantic retrieval across 100,000 technical engineering documentation chunks.',
+    starterMilestones: [
+      'Phase 1: Implement chunking and multi-threaded embedding ingestion pipeline into Pgvector.',
+      'Phase 2: Build reciprocal rank fusion (RRF) combining keyword BM25 with cosine vector similarity.',
+      'Phase 3: Expose FastAPI endpoint with contextual LLM reranking and citation grounding.'
+    ]
+  }
+];
+
+/**
+ * Skill Gap & Engineering Project Recommender (Multi-Track & Active Job Overlay)
+ */
+export function analyzeMarketReadiness(profile = {}, options = {}) {
+  const { 
+    activeTrackId = null, 
+    targetJobDescription = null, 
+    atsScoreResult = null,
+    resumeData = null
+  } = options;
+
+  // 1. Determine active engineering track
+  const detectedTrackId = detectEngineeringTrack(profile.targetRole || '');
+  const trackId = activeTrackId || detectedTrackId;
+  const trackConfig = ENGINEERING_TRACKS.find(t => t.id === trackId) || ENGINEERING_TRACKS[0];
+
+  // 2. Aggregate verified candidate skills from profile and active resume
+  const candidateSkillsSet = new Set([
+    ...(profile.coreSkills || []).map(s => s.toLowerCase().trim()),
+    ...(profile.targetSkills || []).map(s => s.toLowerCase().trim())
+  ]);
+
+  if (resumeData?.skillCategories) {
+    resumeData.skillCategories.forEach(cat => {
+      (cat.skills || []).forEach(s => candidateSkillsSet.add(s.toLowerCase().trim()));
+    });
+  }
+
+  // 3. Evaluate candidate skills against track benchmark skills
+  const benchmarkSkills = trackConfig.benchmarkSkills;
   const matchedSkills = [];
   const missingSkills = [];
 
   benchmarkSkills.forEach(bench => {
-    const isMatched = currentSkills.some(skill => 
-      skill.includes(bench.name.toLowerCase().split(' ')[0]) || 
+    const benchTokens = bench.name.toLowerCase().split(/[\s/]+/);
+    const isMatched = Array.from(candidateSkillsSet).some(skill => 
+      benchTokens.some(token => token.length > 2 && skill.includes(token)) || 
       bench.name.toLowerCase().includes(skill)
     );
+
     if (isMatched) {
       matchedSkills.push(bench);
     } else {
@@ -161,35 +377,53 @@ export function analyzeMarketReadiness(profile) {
     }
   });
 
-  const readinessScore = Math.round((matchedSkills.length / benchmarkSkills.length) * 100);
+  // 4. Incorporate ATS Job Description Overlay (if available)
+  const isAtsOverlayActive = Boolean(targetJobDescription && atsScoreResult);
+  let atsDeficitSkills = [];
 
-  // Recommended hands-on portfolio projects based on skill gaps
-  const recommendedProjects = [
-    {
-      title: 'Decentralized Raft Consensus Key-Value Engine',
-      difficulty: 'Advanced',
-      stack: ['Go or Rust', 'Raft Protocol', 'gRPC', 'LSM-Tree / BadgerDB'],
-      objective: 'Implement leader election, log replication, and failover across 3-5 nodes without data loss.',
-      keyMetricsToTarget: 'Sub-10ms write commits, seamless recovery under partitioned network chaos.'
-    },
-    {
-      title: 'High-Throughput Distributed Rate Limiter',
-      difficulty: 'Intermediate',
-      stack: ['Go', 'Redis Cluster', 'Sliding Window Counter', 'Docker'],
-      objective: 'Build an ultra-low latency middleware service managing rate limits across multi-tenant API clients.',
-      keyMetricsToTarget: 'Benchmark under 50k req/sec with <2ms added latency overhead.'
-    },
-    {
-      title: 'Event-Driven Change-Data-Capture (CDC) Pipeline',
-      difficulty: 'Intermediate',
-      stack: ['PostgreSQL WAL', 'Debezium / Kafka', 'Elasticsearch / OpenSearch'],
-      objective: 'Stream database row mutations into an analytical search index in real-time with at-least-once delivery.',
-      keyMetricsToTarget: '<200ms end-to-end sync delay with automated poison-pill dead-letter queues.'
-    }
-  ];
+  if (isAtsOverlayActive && Array.isArray(atsScoreResult?.missingSkills)) {
+    atsDeficitSkills = atsScoreResult.missingSkills.map(s => ({
+      name: s.canonical || s.key,
+      category: s.category || 'Target JD Requirement',
+      weight: 'Critical',
+      reason: `Directly required by target job: ${atsScoreResult.targetTitle || 'Target Role'}`
+    }));
 
-  // Generated Job Search Links
-  const roleQuery = encodeURIComponent(profile.targetRole || 'Senior Backend Engineer');
+    // Add any unique ATS deficits not already in missingSkills
+    atsDeficitSkills.forEach(atsDef => {
+      const alreadyPresent = missingSkills.some(m => m.name.toLowerCase() === atsDef.name.toLowerCase());
+      if (!alreadyPresent) {
+        missingSkills.unshift(atsDef);
+      }
+    });
+  }
+
+  const readinessScore = Math.max(
+    10,
+    Math.min(100, Math.round((matchedSkills.length / Math.max(1, benchmarkSkills.length)) * 100))
+  );
+
+  // 5. Select personalized project blueprints that directly target the candidate's skill gaps
+  const missingNamesLower = missingSkills.map(m => m.name.toLowerCase());
+
+  // Score each blueprint by how many missing skills it bridges
+  const scoredBlueprints = PROJECT_BLUEPRINTS_CATALOG.map(bp => {
+    const bridged = bp.targetSkills.filter(ts => 
+      missingNamesLower.some(mn => mn.includes(ts.toLowerCase()) || ts.toLowerCase().includes(mn))
+    );
+    return {
+      ...bp,
+      bridgedGaps: bridged,
+      relevanceScore: bridged.length
+    };
+  });
+
+  // Sort by highest gap coverage first
+  scoredBlueprints.sort((a, b) => b.relevanceScore - a.relevanceScore);
+  const recommendedProjects = scoredBlueprints.slice(0, 3);
+
+  // 6. Generate targeted Job Search Links
+  const roleQuery = encodeURIComponent(profile.targetRole || trackConfig.label);
   const jobLinks = [
     {
       platform: 'LinkedIn Jobs',
@@ -207,16 +441,21 @@ export function analyzeMarketReadiness(profile) {
       color: '#2563eb'
     },
     {
-      platform: 'RemoteOK Backend',
-      url: `https://remoteok.com/remote-backend-jobs`,
+      platform: 'RemoteOK',
+      url: `https://remoteok.com/remote-${trackConfig.id}-jobs`,
       color: '#10b981'
     }
   ];
 
   return {
     readinessScore,
+    trackConfig,
+    activeTrackId: trackConfig.id,
+    isAtsOverlayActive,
+    targetJobTitle: atsScoreResult?.targetTitle || profile.targetRole,
     matchedSkills,
     missingSkills,
+    atsDeficitSkills,
     recommendedProjects,
     jobLinks
   };
