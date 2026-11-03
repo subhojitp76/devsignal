@@ -7,6 +7,7 @@ import JournalExtractorModal from './JournalExtractorModal';
 import AIEnhanceModal from './AIEnhanceModal';
 import ResumeHistoryModal from './ResumeHistoryModal';
 import AtsScoreModal from './AtsScoreModal';
+import ResumeChatbotDrawer from './ResumeChatbotDrawer';
 import confetti from 'canvas-confetti';
 import { 
   FileDown, 
@@ -17,10 +18,11 @@ import {
   RotateCcw, 
   BookOpen, 
   Check, 
-  Printer,
-  Loader2,
-  History,
-  Target
+  Printer, 
+  Loader2, 
+  History, 
+  Target, 
+  Bot 
 } from 'lucide-react';
 
 export default function ResumeBuilderTab() {
@@ -45,6 +47,7 @@ export default function ResumeBuilderTab() {
   } = useApp();
 
   const [isExtractorOpen, setIsExtractorOpen] = useState(false);
+  const [isChatOpen, setIsChatOpen] = useState(false);
 
   // Trigger high-fidelity vector PDF print
   const handleExportPdf = () => {
@@ -187,6 +190,33 @@ export default function ResumeBuilderTab() {
                 {atsScoreResult.tierLabel.split(' ')[0]}
               </span>
             )}
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setIsChatOpen(prev => !prev)}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              padding: '7px 14px',
+              borderRadius: 'var(--radius-sm)',
+              background: isChatOpen 
+                ? 'rgba(56, 189, 248, 0.25)' 
+                : 'linear-gradient(135deg, rgba(14, 165, 233, 0.18) 0%, rgba(99, 102, 241, 0.18) 100%)',
+              border: isChatOpen 
+                ? '1px solid #38bdf8' 
+                : '1px solid rgba(56, 189, 248, 0.45)',
+              color: '#38bdf8',
+              fontSize: '12px',
+              fontWeight: 600,
+              cursor: 'pointer',
+              boxShadow: isChatOpen ? '0 0 14px rgba(56, 189, 248, 0.3)' : '0 0 10px rgba(56, 189, 248, 0.15)'
+            }}
+            title="Chat with AI Resume Advisor to discuss changes, get STAR bullet rewrites, and optimize for hiring screens"
+          >
+            <Bot className="w-3.5 h-3.5 text-sky-400" />
+            <span>AI Resume Chat</span>
           </button>
 
           <button
@@ -348,6 +378,61 @@ export default function ResumeBuilderTab() {
         isOpen={isAtsModalOpen}
         onClose={() => setIsAtsModalOpen(false)}
       />
+
+      {/* AI Resume Chatbot Drawer */}
+      <ResumeChatbotDrawer
+        isOpen={isChatOpen}
+        onClose={() => setIsChatOpen(false)}
+      />
+
+      {/* Floating Bottom-Right Launcher (When Chat is Closed) */}
+      {!isChatOpen && (
+        <button
+          type="button"
+          onClick={() => setIsChatOpen(true)}
+          style={{
+            position: 'fixed',
+            bottom: '24px',
+            right: '28px',
+            zIndex: 40,
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            padding: '10px 18px',
+            borderRadius: 'var(--radius-full)',
+            background: 'linear-gradient(135deg, #0284c7 0%, #38bdf8 100%)',
+            color: '#090d16',
+            border: '1px solid rgba(255, 255, 255, 0.2)',
+            fontWeight: 700,
+            fontSize: '13px',
+            cursor: 'pointer',
+            boxShadow: '0 8px 24px rgba(0, 0, 0, 0.5), 0 0 18px rgba(56, 189, 248, 0.4)',
+            transition: 'transform 0.15s ease, box-shadow 0.15s ease'
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.transform = 'translateY(-2px)';
+            e.currentTarget.style.boxShadow = '0 12px 28px rgba(0, 0, 0, 0.6), 0 0 24px rgba(56, 189, 248, 0.6)';
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.transform = 'translateY(0)';
+            e.currentTarget.style.boxShadow = '0 8px 24px rgba(0, 0, 0, 0.5), 0 0 18px rgba(56, 189, 248, 0.4)';
+          }}
+          className="no-print"
+          title="Open AI Resume Advisor Chatbot to discuss changes"
+        >
+          <Bot className="w-4 h-4" />
+          <span>Discuss with AI</span>
+          <span
+            style={{
+              width: '8px',
+              height: '8px',
+              borderRadius: '50%',
+              backgroundColor: '#10b981',
+              boxShadow: '0 0 6px #10b981'
+            }}
+          />
+        </button>
+      )}
 
     </div>
   );

@@ -277,10 +277,207 @@ export async function generateLlmCompletion({ prompt, systemInstruction = '', ai
   } catch (error) {
     clearTimeout(timeoutId);
     if (error.name === 'AbortError') {
-      throw new Error(`Request timed out after ${timeoutSeconds}s. Try increasing timeout in AI Config or switching models.`);
+      throw new Error(`Request timed out after ${effectiveTimeout}s. Try increasing timeout in AI Config or switching models.`);
     }
     throw error;
   }
+}
+
+/**
+ * Multi-turn conversational chat completion through active LLM provider (Gemini or Local LLM)
+ * Supports full conversation history and custom system instructions.
+ */
+export async function generateLlmChatCompletion({ messages = [], systemInstruction = '', aiConfig = {} }) {
+  const { provider, geminiApiKey, geminiModel, ollamaBaseUrl, ollamaModel, timeoutSeconds = 90 } = aiConfig;
+  const isLocal = provider === 'ollama';
+  const effectiveTimeout = timeoutSeconds && timeoutSeconds >= 120 ? timeoutSeconds : (isLocal ? 180 : 45);
+  const controller = new AbortController();
+  const timeoutMs = effectiveTimeout * 1000;
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    if (provider === 'gemini') {
+      if (!geminiApiKey || !geminiApiKey.trim()) {
+        throw new Error('Please configure your Gemini API Key in the AI Settings (top-right gear icon) or switch to Local Ollama.');
+      }
+      const model = geminiModel || 'gemini-3.8-flash';
+      const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${geminiApiKey.trim()}`;
+
+      // Gemini requires contents to start with 'user'. Filter any initial assistant greetings from conversation
+      const validMessages = [];
+      let foundFirstUser = false;
+      for (const m of messages) {
+        if (m.role === 'user') foundFirstUser = true;
+        if (foundFirstUser) {
+          validMessages.push(m);
+        }
+      }
+
+      if (validMessages.length === 0) {
+        throw new Error('No user messages found in conversation history.');
+      }
+
+      const contents = validMessages.map(m => ({
+        role: m.role === 'assistant' ? 'model' : 'user',
+        parts: [{ text: m.content }]
+      }));
+
+      const payload = {
+        contents,
+        generationConfig: {
+          temperature: 0.4,
+          maxOutputTokens: 3500
+        }
+      };
+
+      if (systemInstruction) {
+        payload.system_instruction = {
+          parts: [{ text: systemInstruction }]
+        };
+      }
+
+      const res = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        signal: controller.signal,
+        body: JSON.stringify(payload)
+      });
+
+      clearTimeout(timeoutId);
+
+      if (!res.ok) {
+        const errorJson = await res.json().catch(() => ({}));
+        const msg = errorJson.error?.message || `Gemini API returned status ${res.status}`;
+        throw new Error(msg);
+      }
+
+      const data = await res.json();
+      const textOutput = data.candidates?.[0]?.content?.parts?.[0]?.text;
+      if (!textOutput) throw new Error('No response returned from Gemini API.');
+      return textOutput;
+
+    } else {
+      // Local Ollama / LM Studio (OpenAI-compatible /v1/chat/completions)
+      const baseUrl = (ollamaBaseUrl || 'http://localhost:1234').replace(/\/+$/, '');
+      const isBrowser = typeof window !== 'undefined' && window.location?.origin;
+      const endpoint = isBrowser ? '/api/local-llm/chat/completions' : `${baseUrl}/v1/chat/completions`;
+
+      const formattedMessages = [];
+      if (systemInstruction) {
+        formattedMessages.push({ role: 'system', content: systemInstruction });
+      }
+
+      for (const m of messages) {
+        formattedMessages.push({
+          role: m.role === 'assistant' ? 'assistant' : 'user',
+          content: m.content
+        });
+      }
+
+      const res = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-target-url': baseUrl
+        },
+        signal: controller.signal,
+        body: JSON.stringify({
+          model: ollamaModel || 'google/gemma-4-12b-qat',
+          messages: formattedMessages,
+          temperature: 0.4,
+          max_tokens: 4096
+        })
+      });
+
+      clearTimeout(timeoutId);
+
+      if (!res.ok) {
+        const errText = await res.text().catch(() => '');
+        throw new Error(`Local LLM error (${res.status}): ${errText || 'Failed to generate completion'}`);
+      }
+
+      const data = await res.json();
+      const msg = data.choices?.[0]?.message;
+      let textOutput = msg?.content;
+      if (!textOutput && msg?.reasoning_content) {
+        textOutput = msg.reasoning_content;
+      }
+      if (textOutput && textOutput.includes('</think>')) {
+        const parts = textOutput.split('</think>');
+        const afterThink = parts[parts.length - 1].trim();
+        if (afterThink) {
+          textOutput = afterThink;
+        }
+      }
+      if (!textOutput) throw new Error('No content returned from Local LLM.');
+      return textOutput;
+    }
+  } catch (error) {
+    clearTimeout(timeoutId);
+    if (error.name === 'AbortError') {
+      throw new Error(`Request timed out after ${effectiveTimeout}s. Try increasing timeout in AI Config or switching models.`);
+    }
+    throw error;
+  }
+}
+
+/**
+ * Builds rich, context-aware system instructions for the Resume Discussion Chatbot
+ */
+export function buildResumeChatSystemPrompt({ resumeData, profile, atsScoreResult, targetJobDescription }) {
+  const candidateName = resumeData?.personalInfo?.fullName || 'Candidate';
+  const candidateTitle = resumeData?.personalInfo?.title || profile?.targetRole || 'Software Engineer';
+  const summary = resumeData?.summary || '(No summary set yet)';
+
+  const experienceList = (resumeData?.experience || []).map((exp, idx) => {
+    const bullets = (exp.bullets || []).map(b => `  - ${b}`).join('\n');
+    return `${idx + 1}. ${exp.role || 'Role'} at ${exp.company || 'Company'} (${exp.startDate || ''} - ${exp.endDate || 'Present'})\n${bullets}`;
+  }).join('\n\n');
+
+  const projectsList = (resumeData?.projects || []).map((p, idx) => {
+    const bullets = (p.bullets || []).map(b => `  - ${b}`).join('\n');
+    return `${idx + 1}. ${p.name || 'Project'} [Stack: ${p.techStack || 'N/A'}]\n${bullets}`;
+  }).join('\n\n');
+
+  const skillsList = (resumeData?.skillCategories || []).map(cat => {
+    const list = Array.isArray(cat.skills) ? cat.skills.join(', ') : cat.skills;
+    return `- ${cat.category}: ${list}`;
+  }).join('\n');
+
+  const educationList = (resumeData?.education || []).map(e => 
+    `- ${e.degree} from ${e.institution} (${e.startDate || ''} - ${e.endDate || ''})`
+  ).join('\n');
+
+  return `You are "DevSignal AI Resume Advisor", an expert Principal Software Engineer, Staff Recruiter, and Senior Hiring Coach.
+The candidate is consulting with you interactively to discuss, critique, and improve their resume.
+
+================ CANDIDATE'S CURRENT LIVE RESUME ================
+NAME: ${candidateName}
+CURRENT TITLE: ${candidateTitle}
+TARGET ROLE (PROFILE): ${profile?.targetRole || 'Software Engineer'}
+
+PROFESSIONAL SUMMARY:
+${summary}
+
+SKILLS:
+${skillsList || '(None listed)'}
+
+WORK EXPERIENCE:
+${experienceList || '(No work experience listed)'}
+
+FEATURED PROJECTS:
+${projectsList || '(No projects listed)'}
+
+EDUCATION:
+${educationList || '(No education listed)'}
+${targetJobDescription ? `\nTARGET JOB DESCRIPTION TO MATCH:\n${targetJobDescription.slice(0, 1500)}\n` : ''}${atsScoreResult ? `\nCURRENT ATS SCORE AUDIT: Overall ${atsScoreResult.totalScore}% (${atsScoreResult.tierLabel}). Missing keywords: ${(atsScoreResult.missingKeywords || []).slice(0, 6).join(', ')}\n` : ''}
+================ YOUR ADVISORY PRINCIPLES ================
+1. HONEST & ACTIONABLE: Provide direct, constructive feedback without hollow praise. Identify weak action verbs, lack of quantifiable scale, passive phrasing, and overused buzzwords.
+2. STAR & XYZ METHODOLOGY: When proposing bullet rewrites, adhere to Google's XYZ formula: "Accomplished [X], as measured by [Y], by doing [Z]" or STAR (Situation, Task, Action, Result).
+3. READY-TO-USE SUGGESTIONS: When suggesting changes, provide concrete rewrites that the candidate can copy directly.
+4. SUMMARY TAGGING: When you draft or recommend a complete new Executive Summary, prefix the drafted summary with "SUGGESTED SUMMARY: " followed by the quote or paragraph so the candidate can easily distinguish and apply it.
+5. RESPECT THE CANDIDATE'S ACTUAL EXPERIENCE: Never fabricate companies, degrees, or imaginary technologies. If a bullet lacks numbers, suggest places where they can insert their actual metric (e.g. "[X% reduction in p99 latency]").
+6. CLEAN FORMATTING: Use markdown lists, bold headers, and concise bullet points.`;
 }
 
 /**
@@ -487,5 +684,3 @@ export function generateHeuristicProjectBlueprint(skillGap = 'Distributed System
     modelUsed: 'DevSignal Heuristic Engine (Deterministic)'
   };
 }
-
-
