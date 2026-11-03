@@ -1,7 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { useApp } from '../../context/AppContext';
 import { computeResumeDiff } from '../../utils/diffUtils';
-import confetti from 'canvas-confetti';
 import {
   History,
   X,
@@ -1377,8 +1376,8 @@ export default function ResumeHistoryModal({ isOpen, onClose }) {
                       flex: 1, 
                       minHeight: 0, 
                       overflowY: 'auto', 
-                      scrollbarGutter: 'stable',
-                      scrollbarWidth: 'thin',
+                      scrollbarGutter: 'stable', 
+                      scrollbarWidth: 'thin', 
                       scrollbarColor: '#0284c7 rgba(15, 23, 42, 0.85)',
                       padding: '16px 20px' 
                     }}

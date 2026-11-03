@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useApp } from '../../context/AppContext';
 import { generateLlmChatCompletion, buildResumeChatSystemPrompt } from '../../services/llmService';
-import confetti from 'canvas-confetti';
 import {
   Bot,
   User,
@@ -134,14 +133,6 @@ export default function ResumeChatbotDrawer({ isOpen, onClose }) {
     if (saveResumeSnapshot) {
       saveResumeSnapshot('Applied AI Chat Summary', 'Updated via AI Resume Advisor Chat', 'chat');
     }
-
-    try {
-      confetti({
-        particleCount: 50,
-        spread: 60,
-        origin: { y: 0.7 }
-      });
-    } catch (e) {}
 
     setAppliedSummaryId(messageId);
     showToast('Executive Summary applied directly to your resume!', 'success');
