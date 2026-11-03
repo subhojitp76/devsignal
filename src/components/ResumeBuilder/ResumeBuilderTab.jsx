@@ -8,7 +8,6 @@ import AIEnhanceModal from './AIEnhanceModal';
 import ResumeHistoryModal from './ResumeHistoryModal';
 import AtsScoreModal from './AtsScoreModal';
 import ResumeChatbotDrawer from './ResumeChatbotDrawer';
-import confetti from 'canvas-confetti';
 import { 
   FileDown, 
   Code, 
@@ -51,15 +50,6 @@ export default function ResumeBuilderTab() {
 
   // Trigger high-fidelity vector PDF print
   const handleExportPdf = () => {
-    // Confetti celebration
-    try {
-      confetti({
-        particleCount: 80,
-        spread: 70,
-        origin: { y: 0.6 }
-      });
-    } catch (e) {}
-
     showToast('Opening print dialog. Select Destination: "Save as PDF" (not Microsoft Print to PDF) to keep hyperlinks active!', 'info');
     setTimeout(() => {
       window.print();

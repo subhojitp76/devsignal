@@ -10,7 +10,6 @@ import { enhanceResumeWithAi } from '../services/parserService';
 import { getTabFromUrl, syncUrlWithTab, getRouteForTab, TAB_TITLES, ROUTE_MAP } from '../utils/routeUtils';
 import { cleanGradeString } from '../utils/educationUtils';
 import { formatProfileHandle } from '../utils/linkUtils';
-import confetti from 'canvas-confetti';
 
 const STORAGE_KEY = 'devsignal_v1';
 const LEGACY_STORAGE_KEY = 'dev_resume_studio_v1';
@@ -565,14 +564,6 @@ export function AppProvider({ children }) {
     setResumeData(JSON.parse(JSON.stringify(snapshot.resumeData)));
     if (snapshot.template) setSelectedTemplate(snapshot.template);
     if (snapshot.color) setSelectedColor(snapshot.color);
-
-    try {
-      confetti({
-        particleCount: 75,
-        spread: 60,
-        origin: { y: 0.6 }
-      });
-    } catch (e) {}
 
     showToast(`Restored version: "${snapshot.title}"`, 'success');
     return true;
