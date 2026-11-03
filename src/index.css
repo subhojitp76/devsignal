@@ -223,7 +223,7 @@ input:focus, textarea:focus, select:focus {
 }
 
 /* ==========================================================================
-   PRINT STYLESHEET — High-Precision Vector Resume Printing
+   PRINT STYLESHEET — High-Precision Vector Resume Printing & Active Hyperlinks
    ========================================================================== */
 
 @page {
@@ -232,7 +232,19 @@ input:focus, textarea:focus, select:focus {
 }
 
 @media print {
-  /* Hide the rest of the application interface */
+  /* 1. Hide all non-printable application chrome cleanly using display: none.
+        NEVER use 'body * { visibility: hidden }', which strips PDF link annotations in Chromium! */
+  .no-print,
+  .no-print *,
+  header,
+  nav,
+  aside,
+  button,
+  .toast {
+    display: none !important;
+  }
+
+  /* 2. Reset root HTML and body for 1:1 clean page layout */
   html, body {
     background: #ffffff !important;
     color: #111827 !important;
@@ -241,31 +253,50 @@ input:focus, textarea:focus, select:focus {
     padding: 0 !important;
     width: 100% !important;
     height: auto !important;
+    min-height: 0 !important;
     overflow: visible !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
   }
 
-  body * {
-    visibility: hidden;
+  /* 3. Reset ancestor containers so they don't clip, scale, or offset the print canvas */
+  #root,
+  .app-container,
+  main,
+  .app-container > main,
+  .app-container > main > div,
+  .app-container > main > div > div {
+    display: block !important;
+    position: static !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: none !important;
+    box-shadow: none !important;
+    background: transparent !important;
+    width: 100% !important;
+    height: auto !important;
+    min-height: 0 !important;
+    max-width: none !important;
+    overflow: visible !important;
+    transform: none !important;
   }
 
-  /* Only make the printable resume canvas visible */
-  #printable-resume, #printable-resume * {
-    visibility: visible;
-  }
-
+  /* 4. Natural document flow for the printable resume canvas */
   #printable-resume {
-    position: absolute !important;
-    left: 0 !important;
-    top: 0 !important;
+    display: block !important;
+    position: relative !important;
+    margin: 0 auto !important;
     width: 210mm !important;
     min-height: 297mm !important;
     height: auto !important;
-    margin: 0 !important;
-    box-shadow: none !important;
-    border: none !important;
     background: #ffffff !important;
     color: #1f2937 !important;
+    box-shadow: none !important;
+    border: none !important;
+    border-radius: 0 !important;
     transform: none !important;
+    overflow: visible !important;
+    box-sizing: border-box !important;
     -webkit-print-color-adjust: exact !important;
     print-color-adjust: exact !important;
   }
@@ -282,19 +313,22 @@ input:focus, textarea:focus, select:focus {
     padding: 15mm 18mm !important;
   }
 
+  /* 5. Ensure all hyperlinks inside the resume are preserved, clickable, and correctly styled */
+  #printable-resume a {
+    text-decoration: none !important;
+    cursor: pointer !important;
+    pointer-events: auto !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    position: relative !important;
+    z-index: 10 !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
   /* Prevent page breaks inside critical elements */
   .resume-section, .resume-entry, .resume-project-item {
-    page-break-inside: avoid;
-    break-inside: avoid;
-  }
-
-  /* Ensure links are printed cleanly */
-  a {
-    text-decoration: none !important;
-    color: inherit !important;
-  }
-
-  .no-print {
-    display: none !important;
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
   }
 }

@@ -4,20 +4,6 @@ import { formatEducationDisplay } from '../../../utils/educationUtils';
 import { getProfileLinkInfo } from '../../../utils/linkUtils';
 import { DEFAULT_SECTION_ORDER } from '../../../constants/defaultData';
 
-// Safe inline formatter for markdown bold (**text**)
-function renderFormattedText(text) {
-  if (!text) return null;
-  if (typeof text !== 'string') return text;
-  if (!text.includes('**')) return text;
-  const parts = text.split(/(\*\*.*?\*\*)/g);
-  return parts.map((part, i) => {
-    if (part.startsWith('**') && part.endsWith('**')) {
-      return <strong key={i} style={{ fontWeight: 700 }}>{part.slice(2, -2)}</strong>;
-    }
-    return part;
-  });
-}
-
 export default function TerminalSystemsTemplate({ resumeData, accentColor, density = 'standard' }) {
   const { 
     personalInfo = {}, 
@@ -36,15 +22,23 @@ export default function TerminalSystemsTemplate({ resumeData, accentColor, densi
   const isRelaxed = density === 'relaxed';
 
   const s = {
-    fontSize: isCompact ? '8pt' : isRelaxed ? '9pt' : '8.25pt',
-    lineHeight: isCompact ? 1.24 : isRelaxed ? 1.4 : 1.28,
-    headerMarginBottom: isCompact ? '7px' : isRelaxed ? '14px' : '8.5px',
-    headerPaddingBottom: isCompact ? '5px' : isRelaxed ? '12px' : '7px',
-    sectionMarginBottom: isCompact ? '5px' : isRelaxed ? '12px' : '7px',
-    entryGap: isCompact ? '4.5px' : isRelaxed ? '10px' : '6px',
-    projectGap: isCompact ? '3.5px' : isRelaxed ? '9px' : '5px',
+    fontSize: isCompact ? '8.4pt' : isRelaxed ? '9.6pt' : '8.9pt',
+    lineHeight: isCompact ? 1.24 : isRelaxed ? 1.44 : 1.3,
+    headerMarginBottom: isCompact ? '6px' : isRelaxed ? '16px' : '9px',
+    headerPaddingBottom: isCompact ? '4px' : isRelaxed ? '10px' : '6px',
+    nameSize: isCompact ? '17.5pt' : isRelaxed ? '22pt' : '19.5pt',
+    titleSize: isCompact ? '8.8pt' : isRelaxed ? '10.5pt' : '9.5pt',
+    sectionMarginBottom: isCompact ? '4.5px' : isRelaxed ? '12px' : '6.5px',
+    sectionHeaderMarginBottom: isCompact ? '2px' : isRelaxed ? '5px' : '3px',
+    sectionTitleSize: isCompact ? '8.6pt' : isRelaxed ? '10pt' : '9.2pt',
+    experienceGap: isCompact ? '4px' : isRelaxed ? '10px' : '5.5px',
+    projectGap: isCompact ? '3px' : isRelaxed ? '9px' : '4.5px',
     bulletMarginBottom: isCompact ? '1px' : isRelaxed ? '2.5px' : '1.2px',
-    bulletLineHeight: isCompact ? 1.2 : isRelaxed ? 1.34 : 1.24
+    bulletLineHeight: isCompact ? 1.2 : isRelaxed ? 1.34 : 1.24,
+    skillsGap: isCompact ? '1px' : isRelaxed ? '3.5px' : '1.8px',
+    eduGap: isCompact ? '4px' : isRelaxed ? '9px' : '6.5px',
+    certGap: isCompact ? '3px' : isRelaxed ? '7px' : '4.5px',
+    certLineHeight: isCompact ? 1.22 : isRelaxed ? 1.36 : 1.28
   };
 
   const effectiveSectionOrder = (sectionOrder && sectionOrder.length > 0)
@@ -59,20 +53,30 @@ export default function TerminalSystemsTemplate({ resumeData, accentColor, densi
     const text = typeof c === 'string' ? c : (c.title || '');
     return /rank|gate|award|honored|publish|paper|patent|olympiad|scholar|competition|hackathon/i.test(text);
   });
-  const defaultCertsTitle = hasAchievements ? 'CERTIFICATIONS_&_ACHIEVEMENTS' : 'CERTIFICATIONS';
-  const displayCertsTitle = (certificationsTitle?.trim() || defaultCertsTitle).toUpperCase().replace(/\s+/g, '_');
+  const defaultCertsTitle = hasAchievements ? 'CERTIFICATIONS_AND_ACHIEVEMENTS' : 'CERTIFICATIONS';
+  const displayCertsTitle = certificationsTitle?.trim() 
+    ? certificationsTitle.trim().toUpperCase().replace(/[\s&]+/g, '_')
+    : defaultCertsTitle;
 
   // --- Section Renderers ---
   const renderSummary = () => {
     if (!summary) return null;
     return (
       <section key="summary" className="resume-section" style={{ marginBottom: s.sectionMarginBottom }}>
-        <div style={{ color: accentColor, fontWeight: 700, fontSize: '9pt', marginBottom: '3px' }}>
+        <div style={{
+          fontSize: s.sectionTitleSize,
+          fontWeight: 700,
+          color: accentColor,
+          marginBottom: s.sectionHeaderMarginBottom,
+          borderBottom: `1px solid ${accentColor}40`,
+          paddingBottom: '2px',
+          letterSpacing: '0.4px'
+        }}>
           # [SYSTEM_PROFILE]
         </div>
-        <p style={{ margin: 0, color: '#334155', textAlign: 'justify', lineHeight: 1.35 }}>
+        <div style={{ color: '#334155', textAlign: 'justify', lineHeight: s.lineHeight }}>
           {summary}
-        </p>
+        </div>
       </section>
     );
   };
@@ -81,25 +85,25 @@ export default function TerminalSystemsTemplate({ resumeData, accentColor, densi
     if (!skillCategories || skillCategories.length === 0) return null;
     return (
       <section key="skills" className="resume-section" style={{ marginBottom: s.sectionMarginBottom }}>
-        <div style={{ color: accentColor, fontWeight: 700, fontSize: '9pt', marginBottom: '4px' }}>
+        <div style={{
+          fontSize: s.sectionTitleSize,
+          fontWeight: 700,
+          color: accentColor,
+          marginBottom: s.sectionHeaderMarginBottom,
+          borderBottom: `1px solid ${accentColor}40`,
+          paddingBottom: '2px',
+          letterSpacing: '0.4px'
+        }}>
           # [TECHNICAL_CAPABILITIES]
         </div>
-        <div style={{
-          background: '#f8fafc',
-          border: '1px solid #e2e8f0',
-          borderRadius: '4px',
-          padding: '6px 10px',
-          display: 'flex',
-          flexDirection: 'column',
-          gap: '3px'
-        }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: s.skillsGap }}>
           {skillCategories.map(cat => (
-            <div key={cat.id} style={{ display: 'flex' }}>
-              <span style={{ fontWeight: 700, width: '150px', flexShrink: 0, color: '#0f172a' }}>
-                {cat.category}:
+            <div key={cat.id} style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
+              <span style={{ fontWeight: 700, color: '#0f172a', minWidth: isCompact ? '120px' : '135px', flexShrink: 0 }}>
+                $ {cat.category}:
               </span>
-              <span style={{ color: '#475569' }}>
-                {cat.skills.join(' | ')}
+              <span style={{ color: '#334155' }}>
+                {Array.isArray(cat.skills) ? cat.skills.join(', ') : cat.skills}
               </span>
             </div>
           ))}
@@ -112,33 +116,43 @@ export default function TerminalSystemsTemplate({ resumeData, accentColor, densi
     if (!experience || experience.length === 0) return null;
     return (
       <section key="experience" className="resume-section" style={{ marginBottom: s.sectionMarginBottom }}>
-        <div style={{ color: accentColor, fontWeight: 700, fontSize: '9pt', marginBottom: '6px' }}>
-          # [PRODUCTION_WORK_EXPERIENCE]
+        <div style={{
+          fontSize: s.sectionTitleSize,
+          fontWeight: 700,
+          color: accentColor,
+          marginBottom: s.sectionHeaderMarginBottom,
+          borderBottom: `1px solid ${accentColor}40`,
+          paddingBottom: '2px',
+          letterSpacing: '0.4px'
+        }}>
+          # [PRODUCTION_EXPERIENCE]
         </div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: s.entryGap }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: s.experienceGap }}>
           {experience.map(exp => (
             <div key={exp.id} className="resume-entry">
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
-                <div>
-                  <span style={{ fontWeight: 700, fontSize: '9.5pt', color: '#0f172a' }}>
-                    {exp.role}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', flexWrap: 'wrap', gap: '4px' }}>
+                <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px' }}>
+                  <span style={{ fontWeight: 700, fontSize: '9pt', color: '#0f172a' }}>
+                    &gt; {exp.role}
                   </span>
-                  <span style={{ color: accentColor, fontWeight: 600, marginLeft: '6px' }}>
+                  <span style={{ color: accentColor, fontWeight: 600 }}>
                     @{exp.company}
                   </span>
                 </div>
-                <div style={{ fontSize: '8pt', color: '#64748b' }}>
-                  [{exp.startDate} -&gt; {exp.endDate || 'NOW'}]
+                <div style={{ fontSize: '7.8pt', color: '#64748b', fontWeight: 500 }}>
+                  [{exp.startDate} - {exp.current ? 'PRESENT' : exp.endDate}] {exp.location && `// ${exp.location}`}
                 </div>
               </div>
 
-              <ul style={{ margin: '3px 0 0 14px', padding: 0, color: '#334155' }}>
-                {exp.bullets.map((b, bIdx) => (
-                  <li key={bIdx} style={{ marginBottom: s.bulletMarginBottom, lineHeight: s.bulletLineHeight }}>
-                    {b}
-                  </li>
-                ))}
-              </ul>
+              {exp.bullets && exp.bullets.length > 0 && (
+                <ul style={{ margin: '2px 0 0 0', paddingLeft: '14px', color: '#334155' }}>
+                  {exp.bullets.map((bullet, idx) => (
+                    <li key={idx} style={{ marginBottom: s.bulletMarginBottom, lineHeight: s.bulletLineHeight }}>
+                      {bullet}
+                    </li>
+                  ))}
+                </ul>
+              )}
             </div>
           ))}
         </div>
@@ -150,8 +164,16 @@ export default function TerminalSystemsTemplate({ resumeData, accentColor, densi
     if (!projects || projects.length === 0) return null;
     return (
       <section key="projects" className="resume-section" style={{ marginBottom: s.sectionMarginBottom }}>
-        <div style={{ color: accentColor, fontWeight: 700, fontSize: '9pt', marginBottom: '6px' }}>
-          # [OPEN_SOURCE_&amp;_SYSTEMS_PROJECTS]
+        <div style={{
+          fontSize: s.sectionTitleSize,
+          fontWeight: 700,
+          color: accentColor,
+          marginBottom: s.sectionHeaderMarginBottom,
+          borderBottom: `1px solid ${accentColor}40`,
+          paddingBottom: '2px',
+          letterSpacing: '0.4px'
+        }}>
+          # [FEATURED_PROJECTS]
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: s.projectGap }}>
           {projects.map(proj => {
@@ -181,32 +203,27 @@ export default function TerminalSystemsTemplate({ resumeData, accentColor, densi
                     )}
                   </div>
                   {meta.date && (
-                    <div style={{ fontSize: '7.5pt', color: '#64748b', whiteSpace: 'nowrap' }}>
-                      {meta.date}
+                    <div style={{ fontSize: '7.8pt', color: '#64748b', fontWeight: 500 }}>
+                      [{meta.date}]
                     </div>
                   )}
                 </div>
 
-                {(meta.techStack || meta.subtitleOrAffiliation) && (
-                  <div style={{ fontSize: '7.5pt', color: '#64748b', marginTop: '1px', marginBottom: '1.5px' }}>
-                    {meta.subtitleOrAffiliation && (
-                      <span style={{ color: '#475569', marginRight: '6px' }}>
-                        // {meta.subtitleOrAffiliation}
-                      </span>
-                    )}
-                    {meta.techStack && (
-                      <span>[stack: {meta.techStack}]</span>
-                    )}
+                {meta.techStack && (
+                  <div style={{ fontSize: '7.5pt', color: '#64748b', margin: '0.5px 0 1px 0' }}>
+                    $ stack: [{meta.techStack}]
                   </div>
                 )}
 
-                <ul style={{ margin: '2px 0 0 14px', padding: 0, color: '#334155' }}>
-                  {meta.bullets.map((b, bIdx) => (
-                    <li key={bIdx} style={{ marginBottom: s.bulletMarginBottom, lineHeight: s.bulletLineHeight }}>
-                      {renderFormattedText(b)}
-                    </li>
-                  ))}
-                </ul>
+                {meta.bullets && meta.bullets.length > 0 && (
+                  <ul style={{ margin: '1.5px 0 0 0', paddingLeft: '14px', color: '#334155' }}>
+                    {meta.bullets.map((bullet, idx) => (
+                      <li key={idx} style={{ marginBottom: s.bulletMarginBottom, lineHeight: s.bulletLineHeight }}>
+                        {bullet}
+                      </li>
+                    ))}
+                  </ul>
+                )}
               </div>
             );
           })}
@@ -215,35 +232,44 @@ export default function TerminalSystemsTemplate({ resumeData, accentColor, densi
     );
   };
 
-  const renderEducation = (isGrid = false) => {
+  const renderEducation = () => {
     if (!hasEducation) return null;
     return (
-      <section key="education" className="resume-section" style={{ marginBottom: isGrid ? 0 : s.sectionMarginBottom }}>
-        <div style={{ color: accentColor, fontWeight: 700, fontSize: '8.5pt', marginBottom: '4px' }}>
+      <section key="education" className="resume-section" style={{ marginBottom: s.sectionMarginBottom }}>
+        <div style={{
+          fontSize: s.sectionTitleSize,
+          fontWeight: 700,
+          color: accentColor,
+          marginBottom: s.sectionHeaderMarginBottom,
+          borderBottom: `1px solid ${accentColor}40`,
+          paddingBottom: '2px',
+          letterSpacing: '0.4px'
+        }}>
           # [ACADEMIC_CREDENTIALS]
         </div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: isCompact ? '4px' : '6px' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: s.eduGap }}>
           {education.map(edu => {
-            const dateStr = edu.endDate 
-              ? `${edu.startDate ? `${edu.startDate} - ` : ''}${edu.endDate}`
-              : (edu.startDate || '');
+            const formatted = formatEducationDisplay(edu);
             return (
-              <div key={edu.id} style={{ fontSize: '8pt', color: '#334155' }}>
-                <div style={{ fontWeight: 700, color: '#0f172a' }}>{edu.degree}</div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', color: '#64748b' }}>
-                  <span>{edu.institution}</span>
-                  {dateStr && <span>[{dateStr}]</span>}
+              <div key={edu.id} className="resume-entry">
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', flexWrap: 'wrap', gap: '4px' }}>
+                  <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px' }}>
+                    <span style={{ fontWeight: 700, fontSize: '8.8pt', color: '#0f172a' }}>
+                      &gt; {formatted.degreeLine}
+                    </span>
+                    <span style={{ color: accentColor, fontWeight: 600 }}>
+                      @{formatted.institutionLine}
+                    </span>
+                  </div>
+                  <div style={{ fontSize: '7.8pt', color: '#64748b' }}>
+                    {formatted.rightMetaLine}
+                  </div>
                 </div>
-                {(() => {
-                  const { gradeBadge, honorsBadge } = formatEducationDisplay(edu);
-                  const metaLine = [gradeBadge, honorsBadge].filter(Boolean).join(' | ');
-                  if (!metaLine) return null;
-                  return (
-                    <div style={{ color: accentColor, fontSize: '7.5pt', marginTop: '1px' }}>
-                      &gt; {metaLine}
-                    </div>
-                  );
-                })()}
+                {formatted.highlightsLine && (
+                  <div style={{ fontSize: '7.8pt', color: '#64748b', marginTop: '1px' }}>
+                    {formatted.highlightsLine}
+                  </div>
+                )}
               </div>
             );
           })}
@@ -252,39 +278,39 @@ export default function TerminalSystemsTemplate({ resumeData, accentColor, densi
     );
   };
 
-  const renderCertifications = (isGrid = false) => {
+  const renderCertifications = () => {
     if (!hasCertifications) return null;
     return (
-      <section key="certifications" className="resume-section" style={{ marginBottom: isGrid ? 0 : s.sectionMarginBottom }}>
-        <div style={{ color: accentColor, fontWeight: 700, fontSize: '8.5pt', marginBottom: '4px' }}>
+      <section key="certifications" className="resume-section" style={{ marginBottom: s.sectionMarginBottom }}>
+        <div style={{
+          fontSize: s.sectionTitleSize,
+          fontWeight: 700,
+          color: accentColor,
+          marginBottom: s.sectionHeaderMarginBottom,
+          borderBottom: `1px solid ${accentColor}40`,
+          paddingBottom: '2px',
+          letterSpacing: '0.4px'
+        }}>
           # [{displayCertsTitle}]
         </div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: isCompact ? '3px' : '4.5px' }}>
-          {certifications.map(c => {
-            const title = typeof c === 'string' ? c : (c.title || '');
-            const issuer = typeof c === 'string' ? '' : (c.issuer || '');
-            const date = typeof c === 'string' ? '' : (c.date || '');
-            const key = typeof c === 'object' && c.id ? c.id : title;
-
-            const isAchievementSentence = !issuer && (
-              title.length > 40 || 
-              /^(achieved|published|honored|awarded|secured|cleared|ranked|won|developed|presented|authored)/i.test(title)
-            );
-
-            return (
-              <div key={key} style={{ fontSize: isCompact ? '7.5pt' : '8pt', color: '#334155', display: 'flex', alignItems: 'baseline', gap: '5px', lineHeight: 1.25 }}>
-                <span style={{ color: accentColor, fontWeight: 700 }}>&gt;</span>
-                <div>
-                  {isAchievementSentence ? (
-                    <span>{renderFormattedText(title)}</span>
-                  ) : (
-                    <span>
-                      <span style={{ fontWeight: 600, color: '#0f172a' }}>{title}</span>
-                      {issuer && <span style={{ color: '#64748b' }}> ({issuer})</span>}
-                      {date && <span style={{ color: '#64748b' }}> • {date}</span>}
-                    </span>
-                  )}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: s.certGap }}>
+          {certifications.map(cert => {
+            if (typeof cert === 'string') {
+              return (
+                <div key={cert} style={{ display: 'flex', alignItems: 'baseline', gap: '6px', color: '#334155' }}>
+                  <span style={{ color: accentColor }}>&gt;</span>
+                  <span>{cert}</span>
                 </div>
+              );
+            }
+            return (
+              <div key={cert.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', flexWrap: 'wrap', gap: '4px' }}>
+                <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px' }}>
+                  <span style={{ color: accentColor }}>&gt;</span>
+                  <span style={{ fontWeight: 600, color: '#0f172a' }}>{cert.title}</span>
+                  {cert.issuer && <span style={{ color: '#64748b' }}>// {cert.issuer}</span>}
+                </div>
+                {cert.date && <div style={{ fontSize: '7.8pt', color: '#64748b' }}>[{cert.date}]</div>}
               </div>
             );
           })}
@@ -293,97 +319,111 @@ export default function TerminalSystemsTemplate({ resumeData, accentColor, densi
     );
   };
 
-  // --- Dynamic Section Ordering Loop ---
-  const renderOrderedSections = () => {
-    const renderedSections = [];
-    const handled = new Set();
+  const renderBottomLayout = () => {
+    if (!hasEducation && !hasCertifications) return null;
 
-    const eduIdx = effectiveSectionOrder.indexOf('education');
-    const certIdx = effectiveSectionOrder.indexOf('certifications');
-    const areAdjacent = hasEducation && hasCertifications && Math.abs(eduIdx - certIdx) === 1;
-
-    for (let i = 0; i < effectiveSectionOrder.length; i++) {
-      const sec = effectiveSectionOrder[i];
-      if (handled.has(sec)) continue;
-
-      if (areAdjacent && !isStacked && (sec === 'education' || sec === 'certifications')) {
-        const firstIsEdu = eduIdx < certIdx;
-        renderedSections.push(
-          <div key="edu-certs-grid" style={{ 
-            display: 'grid', 
-            gridTemplateColumns: '1fr 1fr', 
-            gap: '14px',
-            marginBottom: s.sectionMarginBottom
-          }}>
-            {firstIsEdu ? renderEducation(true) : renderCertifications(true)}
-            {firstIsEdu ? renderCertifications(true) : renderEducation(true)}
-          </div>
-        );
-        handled.add('education');
-        handled.add('certifications');
-      } else {
-        if (sec === 'summary') {
-          const el = renderSummary();
-          if (el) renderedSections.push(el);
-        } else if (sec === 'skills') {
-          const el = renderSkills();
-          if (el) renderedSections.push(el);
-        } else if (sec === 'experience') {
-          const el = renderExperience();
-          if (el) renderedSections.push(el);
-        } else if (sec === 'projects') {
-          const el = renderProjects();
-          if (el) renderedSections.push(el);
-        } else if (sec === 'education') {
-          const el = renderEducation(false);
-          if (el) renderedSections.push(el);
-        } else if (sec === 'certifications') {
-          const el = renderCertifications(false);
-          if (el) renderedSections.push(el);
-        }
-        handled.add(sec);
-      }
+    if (isStacked || !hasEducation || !hasCertifications) {
+      return (
+        <React.Fragment key="bottom_combined">
+          {hasEducation && renderEducation()}
+          {hasCertifications && renderCertifications()}
+        </React.Fragment>
+      );
     }
 
-    return renderedSections;
+    return (
+      <div 
+        key="bottom_combined"
+        className="resume-section resume-bottom-grid"
+        style={{
+          display: 'grid',
+          gridTemplateColumns: '1fr 1fr',
+          gap: isCompact ? '12px' : '16px',
+          marginBottom: s.sectionMarginBottom,
+          pageBreakInside: 'avoid',
+          breakInside: 'avoid'
+        }}
+      >
+        <div>{renderEducation()}</div>
+        <div>{renderCertifications()}</div>
+      </div>
+    );
+  };
+
+  const renderOrderedSections = () => {
+    let bottomRendered = false;
+
+    return effectiveSectionOrder.map(secKey => {
+      switch (secKey) {
+        case 'summary':
+          return renderSummary();
+        case 'skills':
+          return renderSkills();
+        case 'experience':
+          return renderExperience();
+        case 'projects':
+          return renderProjects();
+        case 'education':
+        case 'certifications':
+          if (!bottomRendered) {
+            bottomRendered = true;
+            return renderBottomLayout();
+          }
+          return null;
+        default:
+          return null;
+      }
+    });
   };
 
   return (
     <div style={{
-      fontFamily: "'Fira Code', 'JetBrains Mono', ui-monospace, monospace",
-      color: '#0f172a',
+      fontFamily: 'var(--font-mono)',
+      fontSize: s.fontSize,
       lineHeight: s.lineHeight,
-      fontSize: s.fontSize
+      color: '#1e293b'
     }}>
-      {/* Terminal Style Header */}
+      {/* CLI Prompt Header */}
       <header style={{
-        borderBottom: `2px dashed ${accentColor}`,
+        marginBottom: s.headerMarginBottom,
         paddingBottom: s.headerPaddingBottom,
-        marginBottom: s.headerMarginBottom
+        borderBottom: `2px solid ${accentColor}`
       }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '8px' }}>
           <div>
-            <div style={{ fontSize: '10pt', color: accentColor, fontWeight: 700 }}>
-              $ whoami
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px' }}>
+              <span style={{ color: accentColor, fontWeight: 700, fontSize: '13pt' }}>$</span>
+              <h1 style={{
+                fontSize: s.nameSize,
+                fontWeight: 800,
+                color: '#0f172a',
+                margin: 0,
+                letterSpacing: '-0.4px',
+                lineHeight: 1.15
+              }}>
+                {personalInfo.fullName || 'ENGINEER_NAME'}
+              </h1>
             </div>
-            <h1 style={{
-              fontSize: '20pt',
-              fontWeight: 800,
-              color: '#0f172a',
-              letterSpacing: '-0.5px',
-              margin: '2px 0'
+            <div style={{
+              fontSize: s.titleSize,
+              fontWeight: 600,
+              color: accentColor,
+              marginTop: '1px'
             }}>
-              {personalInfo.fullName || 'Software Engineer'}
-            </h1>
-            <div style={{ fontSize: '10pt', fontWeight: 600, color: '#334155' }}>
-              &gt; {personalInfo.title}
+              role: &quot;{personalInfo.title || 'Systems Engineer'}&quot;
             </div>
           </div>
 
           <div style={{ fontSize: '8pt', textAlign: 'right', color: '#475569', display: 'flex', flexDirection: 'column', gap: '2px' }}>
-            <div>{personalInfo.email}</div>
-            <div>{personalInfo.phone}</div>
-            <div>{personalInfo.location}</div>
+            {personalInfo.email && (
+              <div>
+                <a href={`mailto:${personalInfo.email}`} style={{ color: 'inherit', textDecoration: 'none' }}>
+                  {personalInfo.email}
+                </a>
+              </div>
+            )}
+            {personalInfo.phone && <div>{personalInfo.phone}</div>}
+            {personalInfo.location && <div>{personalInfo.location}</div>}
             {(() => {
               const githubInfo = getProfileLinkInfo(personalInfo.github, 'github');
               const linkedinInfo = getProfileLinkInfo(personalInfo.linkedin, 'linkedin');

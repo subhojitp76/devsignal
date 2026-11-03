@@ -60,7 +60,7 @@ export default function ResumeBuilderTab() {
       });
     } catch (e) {}
 
-    showToast('Opening print dialog. Select "Save as PDF" for vector-clean export!', 'info');
+    showToast('Opening print dialog. Select Destination: "Save as PDF" (not Microsoft Print to PDF) to keep hyperlinks active!', 'info');
     setTimeout(() => {
       window.print();
     }, 400);
