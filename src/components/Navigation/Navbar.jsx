@@ -46,7 +46,7 @@ export default function Navbar() {
   };
 
   return (
-    <header style={{
+    <header className="no-print" style={{
       height: 'var(--header-height)',
       borderBottom: '1px solid var(--border-subtle)',
       background: 'rgba(9, 13, 22, 0.85)',
@@ -58,7 +58,7 @@ export default function Navbar() {
       alignItems: 'center',
       justifyContent: 'space-between',
       padding: '0 24px'
-    }} className="no-print">
+    }}>
       {/* Brand Title */}
       <a
         href={TAB_ROUTES.marketRadar}

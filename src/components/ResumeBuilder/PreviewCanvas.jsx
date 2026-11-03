@@ -60,7 +60,7 @@ export default function PreviewCanvas() {
   };
 
   return (
-    <div style={{
+    <div className="resume-preview-panel" style={{
       flex: 1,
       display: 'flex',
       flexDirection: 'column',
@@ -251,7 +251,7 @@ export default function PreviewCanvas() {
       </div>
 
       {/* Canvas Viewport */}
-      <div style={{
+      <div className="resume-canvas-viewport" style={{
         flex: 1,
         overflow: 'auto',
         padding: '32px 20px 80px 20px',

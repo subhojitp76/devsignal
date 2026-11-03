@@ -233,11 +233,13 @@ input:focus, textarea:focus, select:focus {
 
 @media print {
   /* 1. Hide all non-printable application chrome cleanly using display: none.
-        NEVER use 'body * { visibility: hidden }', which strips PDF link annotations in Chromium! */
+        NEVER use 'body * { visibility: hidden }', which strips PDF link annotations in Chromium!
+        NEVER use generic 'header', because resume templates wrap candidate info in <header>! */
   .no-print,
   .no-print *,
-  header,
-  nav,
+  header.no-print,
+  nav.no-print,
+  .app-container > header,
   aside,
   button,
   .toast {
@@ -251,7 +253,7 @@ input:focus, textarea:focus, select:focus {
     font-size: 11pt !important;
     margin: 0 !important;
     padding: 0 !important;
-    width: 100% !important;
+    width: 210mm !important;
     height: auto !important;
     min-height: 0 !important;
     overflow: visible !important;
@@ -259,13 +261,17 @@ input:focus, textarea:focus, select:focus {
     print-color-adjust: exact !important;
   }
 
-  /* 3. Reset ancestor containers so they don't clip, scale, or offset the print canvas */
+  /* 3. Strip all padding, margin, borders, and height limits from all ancestor containers
+        so they don't add extra vertical space or trigger an unwanted 2nd page */
   #root,
   .app-container,
   main,
-  .app-container > main,
-  .app-container > main > div,
-  .app-container > main > div > div {
+  .resume-tab-container,
+  .resume-split-layout,
+  .resume-preview-panel,
+  .resume-canvas-viewport,
+  *:has(> #printable-resume),
+  *:has(> * > #printable-resume) {
     display: block !important;
     position: static !important;
     margin: 0 !important;
@@ -276,9 +282,11 @@ input:focus, textarea:focus, select:focus {
     width: 100% !important;
     height: auto !important;
     min-height: 0 !important;
+    max-height: none !important;
     max-width: none !important;
     overflow: visible !important;
     transform: none !important;
+    gap: 0 !important;
   }
 
   /* 4. Natural document flow for the printable resume canvas */
@@ -287,8 +295,9 @@ input:focus, textarea:focus, select:focus {
     position: relative !important;
     margin: 0 auto !important;
     width: 210mm !important;
-    min-height: 297mm !important;
+    min-height: 0 !important;
     height: auto !important;
+    max-height: none !important;
     background: #ffffff !important;
     color: #1f2937 !important;
     box-shadow: none !important;
@@ -297,8 +306,28 @@ input:focus, textarea:focus, select:focus {
     transform: none !important;
     overflow: visible !important;
     box-sizing: border-box !important;
+    page-break-after: avoid !important;
+    break-after: avoid !important;
     -webkit-print-color-adjust: exact !important;
     print-color-adjust: exact !important;
+  }
+
+  /* Explicitly ensure the resume header, candidate name, and text remain fully visible */
+  #printable-resume header {
+    display: block !important;
+    visibility: visible !important;
+  }
+
+  #printable-resume h1,
+  #printable-resume h2,
+  #printable-resume h3,
+  #printable-resume h4,
+  #printable-resume h5,
+  #printable-resume h6,
+  #printable-resume p,
+  #printable-resume span,
+  #printable-resume div {
+    visibility: visible !important;
   }
 
   #printable-resume.density-compact {
@@ -311,6 +340,12 @@ input:focus, textarea:focus, select:focus {
 
   #printable-resume.density-relaxed {
     padding: 15mm 18mm !important;
+  }
+
+  /* Remove margin from last section/item to prevent subpixel page spillover */
+  #printable-resume > div > *:last-child,
+  #printable-resume .resume-section:last-child {
+    margin-bottom: 0 !important;
   }
 
   /* 5. Ensure all hyperlinks inside the resume are preserved, clickable, and correctly styled */

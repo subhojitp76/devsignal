@@ -18,11 +18,11 @@ import {
   RotateCcw, 
   BookOpen, 
   Check, 
-  Printer, 
-  Loader2, 
-  History, 
-  Target, 
-  Bot 
+  Printer,
+  Loader2,
+  History,
+  Target,
+  Bot
 } from 'lucide-react';
 
 export default function ResumeBuilderTab() {
@@ -80,7 +80,7 @@ export default function ResumeBuilderTab() {
   };
 
   return (
-    <div style={{ maxWidth: '1440px', margin: '0 auto', padding: '16px 24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+    <div className="resume-tab-container" style={{ maxWidth: '1440px', margin: '0 auto', padding: '16px 24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
       
       {/* Top Engineering Controls Bar */}
       <div style={{
@@ -341,7 +341,7 @@ export default function ResumeBuilderTab() {
       </div>
 
       {/* Split-Screen Studio Layout */}
-      <div style={{
+      <div className="resume-split-layout" style={{
         display: 'flex',
         gap: '20px',
         alignItems: 'stretch',
