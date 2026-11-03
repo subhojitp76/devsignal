@@ -2,7 +2,6 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { useApp } from '../../context/AppContext';
 import { calculateAtsScore, SAMPLE_JOB_DESCRIPTIONS, generateHeuristicAiAnalysis } from '../../utils/atsUtils';
 import { analyzeResumeWithLlm } from '../../services/llmService';
-import confetti from 'canvas-confetti';
 import {
   Target,
   X,
@@ -49,47 +48,48 @@ export default function AtsScoreModal({ isOpen, onClose }) {
   const [isAuditing, setIsAuditing] = useState(false);
   const [activeTab, setActiveTab] = useState('recommendations'); // 'recommendations' | 'ai_insights' | 'matched' | 'checklist'
   const [copiedIndex, setCopiedIndex] = useState(null);
-  const [copiedRewriteIndex, setCopiedRewriteIndex] = useState(null);
-  const [activeSampleId, setActiveSampleId] = useState(null);
-  const [aiAnalysis, setAiAnalysis] = useState(null);
-  const [isAiAnalyzing, setIsAiAnalyzing] = useState(false);
+  const [selectedSampleIndex, setSelectedSampleIndex] = useState(-1);
+  const [selectedCategoryFilter, setSelectedCategoryFilter] = useState('all');
 
-  // Sync initial input from context when opened
+  // AI-powered deep review state
+  const [isAiRunning, setIsAiRunning] = useState(false);
+  const [aiAnalysis, setAiAnalysis] = useState(null);
+  const [aiError, setAiError] = useState(null);
+
+  // Sync state if modal opens or target changes
   useEffect(() => {
     if (isOpen) {
-      if (targetJobDescription && !jobDescriptionInput) {
+      if (targetJobDescription) {
         setJobDescriptionInput(targetJobDescription);
       }
-      if (resumeData?.personalInfo?.title && !targetTitleInput) {
+      if (resumeData?.personalInfo?.title) {
         setTargetTitleInput(resumeData.personalInfo.title);
       }
-    }
-  }, [isOpen, targetJobDescription, resumeData]);
-
-  // Handle ESC key to close
-  useEffect(() => {
-    const handleKeyDown = (e) => {
-      if (e.key === 'Escape' && isOpen) {
-        onClose();
+      // If no score calculated yet but we have a JD, calculate it
+      if (!atsScoreResult && (targetJobDescription || resumeData?.personalInfo?.title)) {
+        handleRunAudit();
       }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, onClose]);
+    }
+  }, [isOpen]);
 
-  // Trigger ATS Calculation & Pre-seed Heuristic AI Analysis
-  const handleCalculateScore = (customJd = null, customTitle = null) => {
-    const jdToUse = customJd !== null ? customJd : jobDescriptionInput;
-    const titleToUse = customTitle !== null ? customTitle : targetTitleInput;
+  const handleSelectSample = (sample, index) => {
+    setSelectedSampleIndex(index);
+    setJobDescriptionInput(sample.description);
+    setTargetTitleInput(sample.title);
+  };
 
-    if (!jdToUse.trim()) {
-      showToast('Please paste a Job Description to evaluate ATS compatibility.', 'info');
+  const handleRunAudit = () => {
+    if (!jobDescriptionInput.trim() && !targetTitleInput.trim()) {
+      showToast('Please provide a target job title or paste a job description.', 'warning');
       return;
     }
 
     setIsAuditing(true);
+    setAiError(null);
 
-    // Save target JD to context
+    // Persist target job description
+    const jdToUse = jobDescriptionInput.trim();
+    const titleToUse = targetTitleInput.trim();
     updateTargetJobDescription(jdToUse);
 
     setTimeout(() => {
@@ -104,13 +104,6 @@ export default function AtsScoreModal({ isOpen, onClose }) {
         setIsAuditing(false);
 
         if (result.totalScore >= 85) {
-          try {
-            confetti({
-              particleCount: 75,
-              spread: 60,
-              origin: { y: 0.65 }
-            });
-          } catch (e) {}
           showToast(`Outstanding! ATS match score: ${result.totalScore}% (${result.tierLabel})`, 'success');
         } else {
           showToast(`ATS analysis complete: ${result.totalScore}% match score`, 'info');
@@ -123,1610 +116,874 @@ export default function AtsScoreModal({ isOpen, onClose }) {
     }, 280);
   };
 
-  // Run deep LLM analysis on both Resume & JD
-  const handleRunAiAnalysis = async (customJd = null, customTitle = null) => {
-    const jdToUse = customJd !== null ? customJd : jobDescriptionInput;
-    const titleToUse = customTitle !== null ? customTitle : targetTitleInput;
+  const handleDeepAiAudit = async () => {
+    const isGemini = aiConfig.provider === 'gemini' && aiConfig.geminiApiKey?.trim();
+    const isOllama = aiConfig.provider === 'ollama' && aiConfig.ollamaBaseUrl;
 
-    if (!jdToUse.trim()) {
-      showToast('Please paste a Job Description first to run AI Recruiter Analysis.', 'info');
+    if (!isGemini && !isOllama) {
+      showToast('AI Provider is not configured. Click Settings to add an API key.', 'warning');
+      setIsAiConfigOpen(true);
       return;
     }
 
-    setIsAiAnalyzing(true);
-    setActiveTab('ai_insights');
+    setIsAiRunning(true);
+    setAiError(null);
 
     try {
-      const hasGeminiKey = aiConfig?.provider === 'gemini' && aiConfig.geminiApiKey?.trim();
-      const hasLocalLlm = aiConfig?.provider === 'ollama';
-
-      if (hasGeminiKey || hasLocalLlm) {
-        const providerLabel = aiConfig.provider === 'gemini'
-          ? (aiConfig.geminiModel || 'Gemini 3.8 Flash')
-          : (aiConfig.ollamaModel || 'Local LLM');
-
-        showToast(`Consulting ${providerLabel} for technical hiring manager assessment...`, 'info');
-        const llmResult = await analyzeResumeWithLlm({
-          resumeData,
-          jobDescription: jdToUse,
-          targetTitle: titleToUse,
-          aiConfig
-        });
-        setAiAnalysis(llmResult);
-        showToast('AI Recruiter Deep Dive complete!', 'success');
-      } else {
-        showToast('Running deterministic Heuristic Analysis (Configure AI Settings for live Gemini / Local LLM)...', 'info');
-        const heuristicResult = generateHeuristicAiAnalysis(resumeData, jdToUse, titleToUse);
-        setAiAnalysis(heuristicResult);
-      }
+      const result = await analyzeResumeWithLlm(
+        resumeData,
+        jobDescriptionInput,
+        targetTitleInput,
+        aiConfig
+      );
+      setAiAnalysis(result);
+      setActiveTab('ai_insights');
+      showToast('Deep ATS AI Review finished!', 'success');
     } catch (err) {
-      console.warn('Live LLM call error, using heuristic fallback:', err);
-      showToast(`LLM call error (${err.message}). Using Heuristic Analysis fallback.`, 'warning');
-      const fallbackResult = generateHeuristicAiAnalysis(resumeData, jdToUse, titleToUse);
-      setAiAnalysis(fallbackResult);
+      console.error('Deep AI audit error:', err);
+      setAiError(err.message || 'Failed to complete AI deep analysis. Check provider settings.');
+      showToast('AI deep audit encountered an error.', 'error');
     } finally {
-      setIsAiAnalyzing(false);
+      setIsAiRunning(false);
     }
   };
 
-  // Re-run audit automatically when resume changes if a JD is already scored
-  const handleAddSkillAndRecompute = (skillCanonical, category) => {
-    addSkillToResume(skillCanonical, category);
-
-    setTimeout(() => {
-      if (jobDescriptionInput.trim()) {
-        const updatedResume = {
-          ...resumeData,
-          skillCategories: resumeData.skillCategories?.map(c => ({ ...c })) || []
-        };
-        const newResult = calculateAtsScore(updatedResume, jobDescriptionInput, targetTitleInput);
-        updateAtsScoreResult(newResult);
-      }
-    }, 100);
-  };
-
-  const handleCopyBulletTemplate = (text, idx) => {
+  const handleCopyBullet = (text, idx) => {
     navigator.clipboard.writeText(text);
     setCopiedIndex(idx);
-    showToast('Bullet template copied to clipboard! Paste into your experience.', 'success');
-    setTimeout(() => setCopiedIndex(null), 2500);
+    showToast('Copied to clipboard!', 'success');
+    setTimeout(() => setCopiedIndex(null), 2000);
   };
 
-  const handleCopyRewrite = (text, idx) => {
-    navigator.clipboard.writeText(text);
-    setCopiedRewriteIndex(idx);
-    showToast('AI bullet rewrite copied to clipboard!', 'success');
-    setTimeout(() => setCopiedRewriteIndex(null), 2500);
+  const handleAddSkill = (skillName) => {
+    addSkillToResume(skillName);
+    showToast(`Added "${skillName}" to your Skills section!`, 'success');
+    // Re-audit with updated skills
+    setTimeout(() => {
+      const jdToUse = jobDescriptionInput.trim();
+      const titleToUse = targetTitleInput.trim();
+      if (jdToUse || titleToUse) {
+        const result = calculateAtsScore(
+          {
+            ...resumeData,
+            skills: [...(resumeData.skills || []), skillName]
+          },
+          jdToUse,
+          titleToUse
+        );
+        updateAtsScoreResult(result);
+      }
+    }, 150);
   };
 
-  const handleLoadSample = (sample) => {
-    setActiveSampleId(sample.id);
-    setJobDescriptionInput(sample.text);
-    setTargetTitleInput(sample.targetTitle);
-    handleCalculateScore(sample.text, sample.targetTitle);
-  };
-
-  const handleClear = () => {
-    setJobDescriptionInput('');
-    setActiveSampleId(null);
-    setAiAnalysis(null);
-    updateTargetJobDescription('');
-    updateAtsScoreResult(null);
-    showToast('Cleared Job Description and audit results.', 'info');
-  };
+  // Filter missing skills by category
+  const filteredMissingSkills = useMemo(() => {
+    if (!atsScoreResult?.keywordMatch?.missingDetailed) return [];
+    if (selectedCategoryFilter === 'all') {
+      return atsScoreResult.keywordMatch.missingDetailed;
+    }
+    return atsScoreResult.keywordMatch.missingDetailed.filter(
+      item => item.category === selectedCategoryFilter
+    );
+  }, [atsScoreResult, selectedCategoryFilter]);
 
   if (!isOpen) return null;
 
-  const result = atsScoreResult;
+  const score = atsScoreResult?.totalScore ?? 0;
+  const tierColor = atsScoreResult?.tierColor || 'slate';
 
-  // Gauge SVG calculations
-  const radius = 52;
-  const circumference = 2 * Math.PI * radius;
-  const scorePercent = result ? Math.min(100, Math.max(0, result.totalScore)) : 0;
-  const strokeDashoffset = circumference - (scorePercent / 100) * circumference;
+  const getColorClasses = (color) => {
+    switch (color) {
+      case 'emerald':
+        return {
+          bg: 'bg-emerald-500/10 dark:bg-emerald-500/20',
+          text: 'text-emerald-700 dark:text-emerald-400',
+          border: 'border-emerald-500/30',
+          badge: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300',
+          bar: 'bg-emerald-500'
+        };
+      case 'teal':
+        return {
+          bg: 'bg-teal-500/10 dark:bg-teal-500/20',
+          text: 'text-teal-700 dark:text-teal-400',
+          border: 'border-teal-500/30',
+          badge: 'bg-teal-100 text-teal-800 dark:bg-teal-900/40 dark:text-teal-300',
+          bar: 'bg-teal-500'
+        };
+      case 'amber':
+        return {
+          bg: 'bg-amber-500/10 dark:bg-amber-500/20',
+          text: 'text-amber-700 dark:text-amber-400',
+          border: 'border-amber-500/30',
+          badge: 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300',
+          bar: 'bg-amber-500'
+        };
+      case 'rose':
+      default:
+        return {
+          bg: 'bg-rose-500/10 dark:bg-rose-500/20',
+          text: 'text-rose-700 dark:text-rose-400',
+          border: 'border-rose-500/30',
+          badge: 'bg-rose-100 text-rose-800 dark:bg-rose-900/40 dark:text-rose-300',
+          bar: 'bg-rose-500'
+        };
+    }
+  };
+
+  const themeColors = getColorClasses(tierColor);
 
   return (
-    <div
-      style={{
-        position: 'fixed',
-        inset: 0,
-        backgroundColor: 'rgba(5, 8, 16, 0.85)',
-        backdropFilter: 'blur(10px)',
-        zIndex: 1000,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        padding: '20px'
-      }}
-      onClick={onClose}
-    >
-      <div
-        style={{
-          background: 'linear-gradient(145deg, #090d16 0%, #0d1527 100%)',
-          border: '1px solid rgba(56, 189, 248, 0.3)',
-          boxShadow: '0 25px 60px -15px rgba(0, 0, 0, 0.95), 0 0 35px rgba(56, 189, 248, 0.15)',
-          borderRadius: '16px',
-          width: '100%',
-          maxWidth: '1280px',
-          height: '88vh',
-          maxHeight: '920px',
-          display: 'flex',
-          flexDirection: 'column',
-          overflow: 'hidden'
-        }}
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5 overflow-y-auto bg-slate-900/70 backdrop-blur-sm animate-fadeIn">
+      <div 
+        className="relative w-full max-w-5xl my-auto bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl flex flex-col max-h-[92vh] overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Header Bar */}
-        <div
-          style={{
-            padding: '16px 24px',
-            borderBottom: '1px solid var(--border-subtle)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            background: 'rgba(15, 23, 42, 0.75)',
-            flexShrink: 0
-          }}
-        >
-          <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
-            <div
-              style={{
-                width: '42px',
-                height: '42px',
-                borderRadius: '10px',
-                background: 'linear-gradient(135deg, rgba(56, 189, 248, 0.25) 0%, rgba(168, 85, 247, 0.2) 100%)',
-                border: '1px solid rgba(56, 189, 248, 0.4)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center'
-              }}
-            >
-              <Target className="w-5 h-5 text-sky-400" />
+        {/* MODAL HEADER */}
+        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/80">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-indigo-600 to-violet-600 flex items-center justify-center text-white shadow-md shadow-indigo-500/20">
+              <Target className="w-5 h-5" />
             </div>
             <div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                <h2 style={{ fontSize: '18px', fontWeight: 700, color: 'var(--text-primary)', margin: 0 }}>
-                  ATS Match Calculator & AI Recruiter Auditor
+              <div className="flex items-center gap-2">
+                <h2 className="text-xl font-bold text-slate-900 dark:text-white">
+                  ATS Score & Match Optimizer
                 </h2>
-                <span
-                  style={{
-                    padding: '2px 8px',
-                    borderRadius: '12px',
-                    background: 'rgba(56, 189, 248, 0.12)',
-                    border: '1px solid rgba(56, 189, 248, 0.3)',
-                    color: '#38bdf8',
-                    fontSize: '11px',
-                    fontWeight: 600
-                  }}
-                >
-                  Weighted Engine + LLM Qualitative Deep Dive
+                <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800/50">
+                  Target Role Audit
                 </span>
               </div>
-              <p style={{ fontSize: '12px', color: 'var(--text-muted)', margin: '2px 0 0 0' }}>
-                Skills & Keywords (45%) • Role Fit (20%) • Quantified STAR Impact (20%) • ATS Format (15%) • LLM Semantic Critique
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                Align your resume with actual Applicant Tracking System algorithms before recruiters review it.
               </p>
             </div>
           </div>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <div className="flex items-center gap-2">
             <button
-              type="button"
               onClick={() => setIsAiConfigOpen(true)}
-              style={{
-                background: 'rgba(30, 41, 59, 0.7)',
-                border: '1px solid var(--border-medium)',
-                borderRadius: '8px',
-                padding: '7px 11px',
-                color: 'var(--text-secondary)',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '5px',
-                fontSize: '12px'
-              }}
-              title="Configure Gemini API or Local LLM"
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-600 dark:text-slate-300 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700/60 rounded-lg transition-colors"
+              title="Configure AI Provider (Gemini / Ollama)"
             >
-              <Settings className="w-3.5 h-3.5 text-slate-400" />
+              <Settings className="w-3.5 h-3.5 text-slate-500" />
               <span>AI Settings</span>
             </button>
-
             <button
-              type="button"
               onClick={onClose}
-              style={{
-                background: 'rgba(30, 41, 59, 0.7)',
-                border: '1px solid var(--border-medium)',
-                borderRadius: '8px',
-                padding: '7px 11px',
-                color: 'var(--text-secondary)',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '4px',
-                fontSize: '12px'
-              }}
-              title="Close (Esc)"
+              className="p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors"
+              title="Close modal"
             >
-              <X className="w-4 h-4" />
-              <span>Close</span>
+              <X className="w-5 h-5" />
             </button>
           </div>
         </div>
 
-        {/* Studio Content: 2-Column Split */}
-        <div
-          style={{
-            display: 'grid',
-            gridTemplateColumns: '460px 1fr',
-            flex: 1,
-            overflow: 'hidden',
-            background: 'rgba(8, 12, 22, 0.6)'
-          }}
-        >
-          {/* Left Column: Job Description & Target Settings */}
-          <div
-            style={{
-              borderRight: '1px solid var(--border-subtle)',
-              padding: '20px',
-              display: 'flex',
-              flexDirection: 'column',
-              gap: '16px',
-              background: 'rgba(11, 17, 32, 0.5)',
-              overflowY: 'auto'
-            }}
-          >
-            {/* Quick Load Realistic Samples */}
-            <div>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
-                <label style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <Zap className="w-3.5 h-3.5 text-amber-400" />
-                  <span>Quick-Load Sample Job Descriptions:</span>
-                </label>
+        {/* MODAL BODY */}
+        <div className="flex-1 overflow-y-auto p-6 space-y-6">
+          {/* JOB DESCRIPTION INPUT / TARGET ROLE SELECTOR */}
+          <div className="bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-800 rounded-xl p-4 space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="flex items-center gap-2">
+                <FileText className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+                <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-200">
+                  Target Job Description & Role Title
+                </h3>
               </div>
-
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                {SAMPLE_JOB_DESCRIPTIONS.map((sample) => (
+              
+              {/* Sample JDs quick-fill */}
+              <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0">
+                <span className="text-xs text-slate-500 dark:text-slate-400 whitespace-nowrap">
+                  Load Preset:
+                </span>
+                {SAMPLE_JOB_DESCRIPTIONS.map((sample, idx) => (
                   <button
-                    key={sample.id}
-                    type="button"
-                    onClick={() => handleLoadSample(sample)}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      padding: '8px 12px',
-                      borderRadius: '8px',
-                      background: activeSampleId === sample.id ? 'rgba(56, 189, 248, 0.15)' : 'rgba(30, 41, 59, 0.45)',
-                      border: activeSampleId === sample.id ? '1px solid rgba(56, 189, 248, 0.4)' : '1px solid var(--border-subtle)',
-                      color: activeSampleId === sample.id ? '#38bdf8' : 'var(--text-primary)',
-                      fontSize: '12px',
-                      textAlign: 'left',
-                      cursor: 'pointer',
-                      transition: 'all 0.15s ease'
-                    }}
+                    key={idx}
+                    onClick={() => handleSelectSample(sample, idx)}
+                    className={`text-xs px-2.5 py-1 rounded-md border font-medium transition-all whitespace-nowrap ${
+                      selectedSampleIndex === idx
+                        ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm'
+                        : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:border-indigo-400'
+                    }`}
                   >
-                    <div>
-                      <div style={{ fontWeight: 600 }}>{sample.title}</div>
-                      <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>{sample.company}</div>
-                    </div>
-                    <ChevronRight className="w-3.5 h-3.5 text-slate-500" />
+                    {sample.label}
                   </button>
                 ))}
               </div>
             </div>
 
-            {/* Target Role Title Input */}
-            <div>
-              <label style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: '6px' }}>
-                Target Job Title (Optional):
-              </label>
-              <input
-                type="text"
-                value={targetTitleInput}
-                onChange={(e) => setTargetTitleInput(e.target.value)}
-                placeholder="e.g. Senior Backend Engineer, Staff Software Engineer"
-                style={{
-                  width: '100%',
-                  padding: '9px 12px',
-                  borderRadius: '8px',
-                  background: 'rgba(15, 23, 42, 0.85)',
-                  border: '1px solid var(--border-medium)',
-                  color: 'var(--text-primary)',
-                  fontSize: '13px',
-                  outline: 'none'
-                }}
-              />
-            </div>
-
-            {/* JD Input Textarea */}
-            <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: '250px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
-                <label style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-secondary)' }}>
-                  Job Description Text:
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+              <div className="md:col-span-1">
+                <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">
+                  Target Job Title
                 </label>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-                    {jobDescriptionInput.trim() ? `${jobDescriptionInput.trim().split(/\s+/).length} words` : '0 words'}
-                  </span>
+                <input
+                  type="text"
+                  value={targetTitleInput}
+                  onChange={(e) => setTargetTitleInput(e.target.value)}
+                  placeholder="e.g. Senior Full Stack Engineer"
+                  className="w-full text-xs px-3 py-2 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                />
+              </div>
+
+              <div className="md:col-span-3">
+                <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">
+                  Job Description / Role Requirements (paste text or keywords)
+                </label>
+                <div className="relative">
+                  <textarea
+                    rows={3}
+                    value={jobDescriptionInput}
+                    onChange={(e) => setJobDescriptionInput(e.target.value)}
+                    placeholder="Paste the job description, key responsibilities, or desired qualifications here..."
+                    className="w-full text-xs p-3 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none font-mono"
+                  />
                   {jobDescriptionInput && (
                     <button
-                      type="button"
-                      onClick={handleClear}
-                      style={{
-                        background: 'transparent',
-                        border: 'none',
-                        color: 'var(--text-muted)',
-                        fontSize: '11px',
-                        cursor: 'pointer',
-                        padding: 0
-                      }}
+                      onClick={() => setJobDescriptionInput('')}
+                      className="absolute top-2 right-2 p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+                      title="Clear job description"
                     >
-                      Clear
+                      <X className="w-3.5 h-3.5" />
                     </button>
                   )}
                 </div>
               </div>
-
-              <textarea
-                value={jobDescriptionInput}
-                onChange={(e) => setJobDescriptionInput(e.target.value)}
-                placeholder="Paste the target job description here (responsibilities, required skills, tech stack, qualifications)..."
-                style={{
-                  width: '100%',
-                  flex: 1,
-                  padding: '12px',
-                  borderRadius: '8px',
-                  background: 'rgba(15, 23, 42, 0.85)',
-                  border: '1px solid var(--border-medium)',
-                  color: 'var(--text-primary)',
-                  fontSize: '12px',
-                  lineHeight: '1.5',
-                  resize: 'none',
-                  outline: 'none',
-                  fontFamily: 'inherit'
-                }}
-              />
             </div>
 
-            {/* Action Buttons: ATS Audit & AI Recruiter Deep Dive */}
-            <div style={{ display: 'flex', gap: '8px' }}>
-              <button
-                type="button"
-                onClick={() => handleCalculateScore()}
-                disabled={isAuditing || !jobDescriptionInput.trim()}
-                style={{
-                  flex: 1,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: '6px',
-                  padding: '11px',
-                  borderRadius: '8px',
-                  background: !jobDescriptionInput.trim()
-                    ? 'rgba(30, 41, 59, 0.4)'
-                    : 'linear-gradient(135deg, #0284c7 0%, #38bdf8 100%)',
-                  color: !jobDescriptionInput.trim() ? 'var(--text-muted)' : '#090d16',
-                  fontWeight: 700,
-                  fontSize: '12px',
-                  border: 'none',
-                  cursor: !jobDescriptionInput.trim() || isAuditing ? 'not-allowed' : 'pointer',
-                  boxShadow: jobDescriptionInput.trim() ? 'var(--accent-glow)' : 'none',
-                  transition: 'all 0.2s ease'
-                }}
-              >
-                {isAuditing ? (
-                  <>
-                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                    <span>Auditing...</span>
-                  </>
-                ) : (
-                  <>
-                    <Target className="w-3.5 h-3.5" />
-                    <span>Calculate ATS Match</span>
-                  </>
-                )}
-              </button>
+            <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
+              <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
+                <ShieldCheck className="w-4 h-4 text-emerald-500" />
+                <span>Runs 100% locally by default. Zero private data transmitted without AI consent.</span>
+              </div>
 
-              <button
-                type="button"
-                onClick={() => handleRunAiAnalysis()}
-                disabled={isAiAnalyzing || !jobDescriptionInput.trim()}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: '6px',
-                  padding: '11px 16px',
-                  borderRadius: '8px',
-                  background: !jobDescriptionInput.trim()
-                    ? 'rgba(30, 41, 59, 0.3)'
-                    : 'linear-gradient(135deg, rgba(168, 85, 247, 0.25) 0%, rgba(56, 189, 248, 0.25) 100%)',
-                  border: '1px solid rgba(168, 85, 247, 0.5)',
-                  color: !jobDescriptionInput.trim() ? 'var(--text-muted)' : '#c084fc',
-                  fontWeight: 700,
-                  fontSize: '12px',
-                  cursor: !jobDescriptionInput.trim() || isAiAnalyzing ? 'not-allowed' : 'pointer',
-                  boxShadow: '0 0 14px rgba(168, 85, 247, 0.15)'
-                }}
-                title="Ask LLM models to look into both resume and JD for deep qualitative critique"
-              >
-                {isAiAnalyzing ? (
-                  <>
-                    <RefreshCw className="w-3.5 h-3.5 animate-spin text-purple-400" />
-                    <span>Consulting LLM...</span>
-                  </>
-                ) : (
-                  <>
-                    <Sparkles className="w-3.5 h-3.5 text-purple-400" />
-                    <span>Ask LLM</span>
-                  </>
-                )}
-              </button>
-            </div>
-          </div>
-
-          {/* Right Column: Score Results, 3-Tier Recommendations & AI Recruiter Insights */}
-          <div
-            style={{
-              padding: '24px',
-              display: 'flex',
-              flexDirection: 'column',
-              gap: '20px',
-              overflowY: 'auto'
-            }}
-          >
-            {!result ? (
-              /* Empty State */
-              <div
-                style={{
-                  flex: 1,
-                  display: 'flex',
-                  flexDirection: 'column',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  textAlign: 'center',
-                  padding: '40px 20px',
-                  color: 'var(--text-muted)'
-                }}
-              >
-                <div
-                  style={{
-                    width: '64px',
-                    height: '64px',
-                    borderRadius: '16px',
-                    background: 'rgba(30, 41, 59, 0.4)',
-                    border: '1px solid var(--border-subtle)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    marginBottom: '16px'
-                  }}
-                >
-                  <Target className="w-8 h-8 text-sky-400" />
-                </div>
-                <h3 style={{ fontSize: '16px', fontWeight: 600, color: 'var(--text-primary)', marginBottom: '8px' }}>
-                  No ATS Audit Run Yet
-                </h3>
-                <p style={{ fontSize: '13px', maxWidth: '420px', lineHeight: '1.5', margin: '0 0 20px 0' }}>
-                  Select one of the quick-load job descriptions on the left or paste your own target JD to evaluate compatibility against recruiter parsing bots and get AI hiring manager critique.
-                </p>
+              <div className="flex items-center gap-2">
                 <button
-                  type="button"
-                  onClick={() => handleLoadSample(SAMPLE_JOB_DESCRIPTIONS[0])}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '6px',
-                    padding: '8px 16px',
-                    borderRadius: '8px',
-                    background: 'rgba(56, 189, 248, 0.15)',
-                    border: '1px solid rgba(56, 189, 248, 0.35)',
-                    color: '#38bdf8',
-                    fontSize: '12px',
-                    fontWeight: 600,
-                    cursor: 'pointer'
-                  }}
+                  onClick={handleRunAudit}
+                  disabled={isAuditing}
+                  className="flex items-center gap-1.5 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold rounded-lg shadow-sm shadow-indigo-600/30 transition-all disabled:opacity-50"
                 >
-                  <Zap className="w-3.5 h-3.5 text-amber-400" />
-                  <span>Try Demo: Senior Distributed Systems</span>
+                  <RefreshCw className={`w-3.5 h-3.5 ${isAuditing ? 'animate-spin' : ''}`} />
+                  <span>{isAuditing ? 'Auditing Resume...' : 'Analyze ATS Score'}</span>
+                </button>
+
+                <button
+                  onClick={handleDeepAiAudit}
+                  disabled={isAiRunning}
+                  className="flex items-center gap-1.5 px-3.5 py-2 bg-gradient-to-r from-violet-600 to-purple-600 hover:from-violet-700 hover:to-purple-700 text-white text-xs font-semibold rounded-lg shadow-sm shadow-violet-600/20 transition-all disabled:opacity-50"
+                >
+                  <Sparkles className={`w-3.5 h-3.5 ${isAiRunning ? 'animate-spin' : ''}`} />
+                  <span>{isAiRunning ? 'AI Analyzing...' : 'Deep AI Review'}</span>
                 </button>
               </div>
-            ) : (
-              /* Active Results Display */
-              <>
-                {/* Top Score Banner Card */}
-                <div
-                  style={{
-                    background: 'rgba(15, 23, 42, 0.7)',
-                    border: `1px solid ${result.tierColor}40`,
-                    borderRadius: '12px',
-                    padding: '20px 24px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    boxShadow: `0 0 25px ${result.tierColor}15`
-                  }}
-                >
-                  {/* Gauge & Main Score */}
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
-                    <div style={{ position: 'relative', width: '116px', height: '116px' }}>
-                      <svg width="116" height="116" viewBox="0 0 120 120" style={{ transform: 'rotate(-90deg)' }}>
+            </div>
+          </div>
+
+          {/* MAIN RESULTS & SCORE DASHBOARD */}
+          {atsScoreResult ? (
+            <div className="space-y-6">
+              {/* TOP SCORE OVERVIEW BANNER */}
+              <div className={`p-5 rounded-2xl border ${themeColors.border} ${themeColors.bg} transition-all`}>
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-5">
+                  {/* Big Circular Score */}
+                  <div className="flex items-center gap-5">
+                    <div className="relative flex items-center justify-center">
+                      <svg className="w-24 h-24 transform -rotate-90">
                         <circle
-                          cx="60"
-                          cy="60"
-                          r={radius}
-                          fill="transparent"
-                          stroke="rgba(30, 41, 59, 0.8)"
+                          cx="48"
+                          cy="48"
+                          r="38"
+                          stroke="currentColor"
                           strokeWidth="8"
+                          fill="transparent"
+                          className="text-slate-200 dark:text-slate-800"
                         />
                         <circle
-                          cx="60"
-                          cy="60"
-                          r={radius}
-                          fill="transparent"
-                          stroke={result.tierColor}
+                          cx="48"
+                          cy="48"
+                          r="38"
+                          stroke="currentColor"
                           strokeWidth="8"
-                          strokeDasharray={circumference}
-                          strokeDashoffset={strokeDashoffset}
+                          fill="transparent"
+                          strokeDasharray={2 * Math.PI * 38}
+                          strokeDashoffset={2 * Math.PI * 38 * (1 - score / 100)}
                           strokeLinecap="round"
-                          style={{ transition: 'stroke-dashoffset 0.8s ease' }}
+                          className={`${themeColors.text} transition-all duration-1000 ease-out`}
                         />
                       </svg>
-                      <div
-                        style={{
-                          position: 'absolute',
-                          inset: 0,
-                          display: 'flex',
-                          flexDirection: 'column',
-                          alignItems: 'center',
-                          justifyContent: 'center'
-                        }}
-                      >
-                        <span style={{ fontSize: '28px', fontWeight: 800, color: 'var(--text-primary)', lineHeight: 1 }}>
-                          {result.totalScore}
+                      <div className="absolute inset-0 flex flex-col items-center justify-center">
+                        <span className="text-2xl font-black text-slate-900 dark:text-white">
+                          {score}%
                         </span>
-                        <span style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 600 }}>/ 100</span>
+                        <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                          ATS Match
+                        </span>
                       </div>
                     </div>
 
-                    <div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
-                        <span
-                          style={{
-                            padding: '4px 10px',
-                            borderRadius: '12px',
-                            background: `${result.tierColor}20`,
-                            border: `1px solid ${result.tierColor}50`,
-                            color: result.tierColor,
-                            fontSize: '12px',
-                            fontWeight: 700
-                          }}
-                        >
-                          {result.tierLabel}
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2">
+                        <span className={`text-xs font-bold px-2.5 py-0.5 rounded-full ${themeColors.badge}`}>
+                          {atsScoreResult.tierLabel}
                         </span>
-                        <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
-                          • {result.wordCount} words total
+                        <span className="text-xs text-slate-500 dark:text-slate-400">
+                          {atsScoreResult.keywordMatch.matchedCount} of {atsScoreResult.keywordMatch.totalTargetKeywords} Target Keywords Matched
                         </span>
                       </div>
-                      <p style={{ fontSize: '13px', color: 'var(--text-secondary)', margin: 0, maxWidth: '440px' }}>
-                        {result.totalScore >= 85
-                          ? 'Exceptional resume alignment! Your resume has strong technical overlap and quantified impact metrics.'
-                          : result.totalScore >= 70
-                          ? 'Solid foundation. Adding recruiter-preferred canonical terms and quantifying more bullet points will push you past 85%.'
-                          : 'Optimization needed. The ATS detected significant missing keywords and low metric density compared to this job posting.'}
+                      <h4 className="text-lg font-bold text-slate-900 dark:text-white">
+                        {atsScoreResult.summary}
+                      </h4>
+                      <p className="text-xs text-slate-600 dark:text-slate-400 max-w-xl">
+                        Targeting:{' '}
+                        <span className="font-semibold text-slate-800 dark:text-slate-200">
+                          {targetTitleInput || 'General Technical Role'}
+                        </span>
+                        . Scores 80%+ generally pass automated resume filtering with high confidence.
                       </p>
                     </div>
                   </div>
 
-                  {/* Summary Metric Stats */}
-                  <div style={{ display: 'flex', gap: '16px', borderLeft: '1px solid var(--border-subtle)', paddingLeft: '20px' }}>
-                    <div style={{ textAlign: 'center' }}>
-                      <div style={{ fontSize: '20px', fontWeight: 700, color: '#38bdf8' }}>
-                        {result.matchedSkills?.length || 0}
-                      </div>
-                      <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Matched Skills</div>
-                    </div>
-                    <div style={{ textAlign: 'center' }}>
-                      <div style={{ fontSize: '20px', fontWeight: 700, color: '#f87171' }}>
-                        {result.missingSkills?.length || 0}
-                      </div>
-                      <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Missing Skills</div>
-                    </div>
-                    <div style={{ textAlign: 'center' }}>
-                      <div style={{ fontSize: '20px', fontWeight: 700, color: '#34d399' }}>
-                        {Math.round(result.metricAudit?.ratio * 100) || 0}%
-                      </div>
-                      <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Metrics Density</div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Subscore 4-Pillar Bars */}
-                <div
-                  style={{
-                    display: 'grid',
-                    gridTemplateColumns: 'repeat(4, 1fr)',
-                    gap: '12px'
-                  }}
-                >
-                  {/* Pillar 1: Skills */}
-                  <div
-                    style={{
-                      background: 'rgba(15, 23, 42, 0.5)',
-                      border: '1px solid var(--border-subtle)',
-                      borderRadius: '10px',
-                      padding: '12px 14px'
-                    }}
-                  >
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
-                      <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-secondary)' }}>
-                        Skills Match
-                      </span>
-                      <span style={{ fontSize: '11px', fontWeight: 700, color: '#38bdf8' }}>
-                        {result.subscores.skillsMatch}% (45%)
-                      </span>
-                    </div>
-                    <div style={{ height: '5px', background: 'rgba(30, 41, 59, 0.7)', borderRadius: '4px', overflow: 'hidden' }}>
-                      <div
-                        style={{
-                          height: '100%',
-                          width: `${result.subscores.skillsMatch}%`,
-                          background: '#38bdf8',
-                          borderRadius: '4px'
-                        }}
-                      />
-                    </div>
-                  </div>
-
-                  {/* Pillar 2: Role Fit */}
-                  <div
-                    style={{
-                      background: 'rgba(15, 23, 42, 0.5)',
-                      border: '1px solid var(--border-subtle)',
-                      borderRadius: '10px',
-                      padding: '12px 14px'
-                    }}
-                  >
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
-                      <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-secondary)' }}>
-                        Role & Seniority
-                      </span>
-                      <span style={{ fontSize: '11px', fontWeight: 700, color: '#c084fc' }}>
-                        {result.subscores.roleAlignment}% (20%)
-                      </span>
-                    </div>
-                    <div style={{ height: '5px', background: 'rgba(30, 41, 59, 0.7)', borderRadius: '4px', overflow: 'hidden' }}>
-                      <div
-                        style={{
-                          height: '100%',
-                          width: `${result.subscores.roleAlignment}%`,
-                          background: '#c084fc',
-                          borderRadius: '4px'
-                        }}
-                      />
-                    </div>
-                  </div>
-
-                  {/* Pillar 3: Quantified Impact */}
-                  <div
-                    style={{
-                      background: 'rgba(15, 23, 42, 0.5)',
-                      border: '1px solid var(--border-subtle)',
-                      borderRadius: '10px',
-                      padding: '12px 14px'
-                    }}
-                  >
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
-                      <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-secondary)' }}>
-                        STAR / Metrics
-                      </span>
-                      <span style={{ fontSize: '11px', fontWeight: 700, color: '#34d399' }}>
-                        {result.subscores.quantifiedMetrics}% (20%)
-                      </span>
-                    </div>
-                    <div style={{ height: '5px', background: 'rgba(30, 41, 59, 0.7)', borderRadius: '4px', overflow: 'hidden' }}>
-                      <div
-                        style={{
-                          height: '100%',
-                          width: `${result.subscores.quantifiedMetrics}%`,
-                          background: '#34d399',
-                          borderRadius: '4px'
-                        }}
-                      />
-                    </div>
-                  </div>
-
-                  {/* Pillar 4: ATS Structure */}
-                  <div
-                    style={{
-                      background: 'rgba(15, 23, 42, 0.5)',
-                      border: '1px solid var(--border-subtle)',
-                      borderRadius: '10px',
-                      padding: '12px 14px'
-                    }}
-                  >
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
-                      <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-secondary)' }}>
-                        ATS Format
-                      </span>
-                      <span style={{ fontSize: '11px', fontWeight: 700, color: '#fbbf24' }}>
-                        {result.subscores.atsFormat}% (15%)
-                      </span>
-                    </div>
-                    <div style={{ height: '5px', background: 'rgba(30, 41, 59, 0.7)', borderRadius: '4px', overflow: 'hidden' }}>
-                      <div
-                        style={{
-                          height: '100%',
-                          width: `${result.subscores.atsFormat}%`,
-                          background: '#fbbf24',
-                          borderRadius: '4px'
-                        }}
-                      />
-                    </div>
-                  </div>
-                </div>
-
-                {/* Tab Navigation */}
-                <div style={{ display: 'flex', gap: '8px', borderBottom: '1px solid var(--border-subtle)', paddingBottom: '10px' }}>
-                  <button
-                    type="button"
-                    onClick={() => setActiveTab('recommendations')}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '6px',
-                      padding: '6px 14px',
-                      borderRadius: '6px',
-                      background: activeTab === 'recommendations' ? 'rgba(56, 189, 248, 0.15)' : 'transparent',
-                      border: activeTab === 'recommendations' ? '1px solid rgba(56, 189, 248, 0.4)' : '1px solid transparent',
-                      color: activeTab === 'recommendations' ? '#38bdf8' : 'var(--text-muted)',
-                      fontSize: '12px',
-                      fontWeight: 600,
-                      cursor: 'pointer'
-                    }}
-                  >
-                    <Sparkles className="w-3.5 h-3.5" />
-                    <span>3-Tier Recommendations</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setActiveTab('ai_insights');
-                      if (!aiAnalysis) handleRunAiAnalysis();
-                    }}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '6px',
-                      padding: '6px 14px',
-                      borderRadius: '6px',
-                      background: activeTab === 'ai_insights' ? 'linear-gradient(135deg, rgba(168, 85, 247, 0.2) 0%, rgba(56, 189, 248, 0.2) 100%)' : 'transparent',
-                      border: activeTab === 'ai_insights' ? '1px solid rgba(168, 85, 247, 0.5)' : '1px solid transparent',
-                      color: activeTab === 'ai_insights' ? '#c084fc' : 'var(--text-muted)',
-                      fontSize: '12px',
-                      fontWeight: 600,
-                      cursor: 'pointer',
-                      boxShadow: activeTab === 'ai_insights' ? '0 0 10px rgba(168, 85, 247, 0.15)' : 'none'
-                    }}
-                  >
-                    <Bot className="w-3.5 h-3.5 text-purple-400" />
-                    <span>AI Recruiter Deep Dive</span>
-                    <span style={{ fontSize: '9px', padding: '1px 5px', borderRadius: '8px', background: 'rgba(168, 85, 247, 0.25)', color: '#c084fc', fontWeight: 700 }}>
-                      LLM
-                    </span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => setActiveTab('matched')}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '6px',
-                      padding: '6px 14px',
-                      borderRadius: '6px',
-                      background: activeTab === 'matched' ? 'rgba(52, 211, 153, 0.15)' : 'transparent',
-                      border: activeTab === 'matched' ? '1px solid rgba(52, 211, 153, 0.4)' : '1px solid transparent',
-                      color: activeTab === 'matched' ? '#34d399' : 'var(--text-muted)',
-                      fontSize: '12px',
-                      fontWeight: 600,
-                      cursor: 'pointer'
-                    }}
-                  >
-                    <CheckCircle2 className="w-3.5 h-3.5" />
-                    <span>Matched Keywords ({result.matchedSkills?.length || 0})</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => setActiveTab('checklist')}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '6px',
-                      padding: '6px 14px',
-                      borderRadius: '6px',
-                      background: activeTab === 'checklist' ? 'rgba(251, 191, 36, 0.15)' : 'transparent',
-                      border: activeTab === 'checklist' ? '1px solid rgba(251, 191, 36, 0.4)' : '1px solid transparent',
-                      color: activeTab === 'checklist' ? '#fbbf24' : 'var(--text-muted)',
-                      fontSize: '12px',
-                      fontWeight: 600,
-                      cursor: 'pointer'
-                    }}
-                  >
-                    <ShieldCheck className="w-3.5 h-3.5" />
-                    <span>ATS Structural Audit</span>
-                  </button>
-                </div>
-
-                {/* Tab Content 1: 3-Tier Recommendations */}
-                {activeTab === 'recommendations' && (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-                    
-                    {/* Tier 1: Safe Synonyms & Exact Recruiter Keywords */}
-                    <div
-                      style={{
-                        background: 'rgba(15, 23, 42, 0.65)',
-                        border: '1px solid rgba(56, 189, 248, 0.3)',
-                        borderRadius: '12px',
-                        padding: '18px 20px'
-                      }}
-                    >
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
-                        <span
-                          style={{
-                            background: 'rgba(56, 189, 248, 0.2)',
-                            color: '#38bdf8',
-                            fontSize: '11px',
-                            fontWeight: 700,
-                            padding: '2px 8px',
-                            borderRadius: '4px'
-                          }}
-                        >
-                          TIER 1 • SAFE SYNONYMS & EXACT MATCH
-                        </span>
-                        <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
-                          High Impact • 1-Click Addition
+                  {/* 4 Pillar Breakdown Bars */}
+                  <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-2 lg:grid-cols-4 gap-3 md:min-w-[340px]">
+                    {/* Keyword Match */}
+                    <div className="p-2.5 bg-white dark:bg-slate-900/80 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm">
+                      <div className="flex items-center justify-between text-xs mb-1">
+                        <span className="text-slate-500 font-medium">Keywords</span>
+                        <span className="font-bold text-slate-800 dark:text-slate-200">
+                          {atsScoreResult.pillars.keywordMatch.score}%
                         </span>
                       </div>
-                      <p style={{ fontSize: '12px', color: 'var(--text-secondary)', margin: '0 0 14px 0', lineHeight: '1.4' }}>
-                        You have verified experience in related technologies, but Applicant Tracking Systems scan for these specific canonical recruiter terms:
-                      </p>
-
-                      {/* Tier 1 Recommendations List */}
-                      {(!result.recommendations?.tier1 || result.recommendations.tier1.length === 0) ? (
-                        <div style={{ fontSize: '12px', color: 'var(--text-muted)', fontStyle: 'italic' }}>
-                          No missing synonym gaps found. Your technical terminology matches the target JD nicely!
-                        </div>
-                      ) : (
-                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '10px' }}>
-                          {(result.recommendations?.tier1 || []).map((rec) => {
-                            const skillName = rec.skill || rec.targetKeyword || rec.keyword;
-                            const contextDetail = rec.reason || (rec.matchedSynonym ? `Matches: ${rec.matchedSynonym}` : 'Recommended keyword');
-                            return (
-                              <div
-                                key={skillName}
-                                style={{
-                                  display: 'flex',
-                                  alignItems: 'center',
-                                  justifyContent: 'space-between',
-                                  background: 'rgba(30, 41, 59, 0.5)',
-                                  border: '1px solid var(--border-subtle)',
-                                  borderRadius: '8px',
-                                  padding: '8px 12px'
-                                }}
-                              >
-                                <div>
-                                  <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-primary)' }}>
-                                    {skillName}
-                                  </div>
-                                  <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-                                    {contextDetail}
-                                  </div>
-                                </div>
-
-                                <button
-                                  type="button"
-                                  onClick={() => handleAddSkillAndRecompute(skillName, rec.category)}
-                                  style={{
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    gap: '4px',
-                                    padding: '5px 10px',
-                                    borderRadius: '6px',
-                                    background: 'linear-gradient(135deg, rgba(56, 189, 248, 0.2) 0%, rgba(52, 211, 153, 0.2) 100%)',
-                                    border: '1px solid rgba(56, 189, 248, 0.4)',
-                                    color: '#38bdf8',
-                                    fontSize: '11px',
-                                    fontWeight: 600,
-                                    cursor: 'pointer'
-                                  }}
-                                  title={`Add ${skillName} to your resume skills`}
-                                >
-                                  <Plus className="w-3 h-3" />
-                                  <span>+ Add to Skills</span>
-                                </button>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Tier 2: Contextual Impact & STAR Rewrites */}
-                    <div
-                      style={{
-                        background: 'rgba(15, 23, 42, 0.65)',
-                        border: '1px solid rgba(168, 85, 247, 0.3)',
-                        borderRadius: '12px',
-                        padding: '18px 20px'
-                      }}
-                    >
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
-                        <span
-                          style={{
-                            background: 'rgba(168, 85, 247, 0.2)',
-                            color: '#c084fc',
-                            fontSize: '11px',
-                            fontWeight: 700,
-                            padding: '2px 8px',
-                            borderRadius: '4px'
-                          }}
-                        >
-                          TIER 2 • CONTEXTUAL STAR BULLETS
-                        </span>
-                        <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
-                          Medium-High Impact • Experience Alignment
-                        </span>
-                      </div>
-                      <p style={{ fontSize: '12px', color: 'var(--text-secondary)', margin: '0 0 14px 0', lineHeight: '1.4' }}>
-                        These high-frequency keywords demand real engineering context rather than isolated skill listing. Copy and customize these proven bullet templates:
-                      </p>
-
-                      {(!result.recommendations?.tier2 || result.recommendations.tier2.length === 0) ? (
-                        <div style={{ fontSize: '12px', color: 'var(--text-muted)', fontStyle: 'italic' }}>
-                          No additional contextual templates required for this JD.
-                        </div>
-                      ) : (
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                          {(result.recommendations?.tier2 || []).map((rec, idx) => {
-                            const skillName = rec.skill || rec.keyword;
-                            const templateText = rec.suggestedBulletTemplate || rec.suggestedBullet || '';
-                            return (
-                              <div
-                                key={skillName + idx}
-                                style={{
-                                  background: 'rgba(30, 41, 59, 0.5)',
-                                  border: '1px solid var(--border-subtle)',
-                                  borderRadius: '8px',
-                                  padding: '12px 14px',
-                                  display: 'flex',
-                                  flexDirection: 'column',
-                                  gap: '8px'
-                                }}
-                              >
-                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                                  <span style={{ fontSize: '12px', fontWeight: 700, color: '#c084fc' }}>
-                                    Keyword: {skillName}
-                                  </span>
-                                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                    <button
-                                      type="button"
-                                      onClick={() => openLearnModal(skillName, rec.category || 'Technical Systems')}
-                                      style={{
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        gap: '4px',
-                                        padding: '4px 9px',
-                                        borderRadius: '6px',
-                                        background: 'rgba(251, 191, 36, 0.15)',
-                                        border: '1px solid rgba(251, 191, 36, 0.35)',
-                                        color: '#fbbf24',
-                                        fontSize: '11px',
-                                        fontWeight: 600,
-                                        cursor: 'pointer'
-                                      }}
-                                      title={`Get Socratic interview & POC prompts for ${skillName}`}
-                                    >
-                                      <BookOpen className="w-3 h-3" />
-                                      <span>Learn with AI</span>
-                                    </button>
-                                    <button
-                                      type="button"
-                                      onClick={() => handleCopyBulletTemplate(templateText, idx)}
-                                      style={{
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        gap: '4px',
-                                        padding: '4px 10px',
-                                        borderRadius: '6px',
-                                        background: copiedIndex === idx ? 'rgba(52, 211, 153, 0.2)' : 'rgba(168, 85, 247, 0.15)',
-                                        border: copiedIndex === idx ? '1px solid rgba(52, 211, 153, 0.4)' : '1px solid rgba(168, 85, 247, 0.3)',
-                                        color: copiedIndex === idx ? '#34d399' : '#c084fc',
-                                        fontSize: '11px',
-                                        fontWeight: 600,
-                                        cursor: 'pointer'
-                                      }}
-                                    >
-                                      {copiedIndex === idx ? (
-                                        <>
-                                          <Check className="w-3 h-3" />
-                                          <span>Copied!</span>
-                                        </>
-                                      ) : (
-                                        <>
-                                          <Copy className="w-3 h-3" />
-                                          <span>Copy Template</span>
-                                        </>
-                                      )}
-                                    </button>
-                                  </div>
-                                </div>
-                                <div
-                                  style={{
-                                    fontSize: '12px',
-                                    color: 'var(--text-primary)',
-                                    background: 'rgba(15, 23, 42, 0.7)',
-                                    padding: '8px 12px',
-                                    borderRadius: '6px',
-                                    fontFamily: 'monospace'
-                                  }}
-                                >
-                                  {templateText}
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Tier 3: True Skill Gaps & Deficits (Objective Engineering Triage) */}
-                    <div
-                      style={{
-                        background: 'rgba(15, 23, 42, 0.65)',
-                        border: '1px solid rgba(248, 113, 113, 0.3)',
-                        borderRadius: '12px',
-                        padding: '18px 20px'
-                      }}
-                    >
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
-                        <span
-                          style={{
-                            background: 'rgba(248, 113, 113, 0.2)',
-                            color: '#f87171',
-                            fontSize: '11px',
-                            fontWeight: 700,
-                            padding: '2px 8px',
-                            borderRadius: '4px'
-                          }}
-                        >
-                          TIER 3 • TRUE SKILL DEFICITS (OBJECTIVE ANALYSIS)
-                        </span>
-                        <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
-                          Avoid Blind Keyword Stuffing
-                        </span>
-                      </div>
-                      
-                      <div
-                        style={{
-                          background: 'rgba(239, 68, 68, 0.1)',
-                          border: '1px solid rgba(239, 68, 68, 0.25)',
-                          borderRadius: '8px',
-                          padding: '10px 14px',
-                          marginBottom: '14px',
-                          display: 'flex',
-                          alignItems: 'flex-start',
-                          gap: '10px'
-                        }}
-                      >
-                        <AlertTriangle className="w-4 h-4 text-rose-400 flex-shrink-0" style={{ marginTop: '2px' }} />
-                        <div style={{ fontSize: '12px', color: '#fca5a5', lineHeight: '1.4' }}>
-                          <strong>Engineering Integrity Warning:</strong> These skills appear in the JD, but no direct or indirect foundation was found on your resume. Do not blindly keyword stuff—technical screeners will probe deep into real production scenarios. Instead, use these as your roadmap for Dev Journal projects.
-                        </div>
-                      </div>
-
-                      {(!result.recommendations?.tier3 || result.recommendations.tier3.length === 0) ? (
-                        <div style={{ fontSize: '12px', color: 'var(--text-muted)', fontStyle: 'italic' }}>
-                          Zero hard skill deficits detected! You meet all core technical requirements.
-                        </div>
-                      ) : (
-                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
-                          {(result.recommendations?.tier3 || []).map((gap) => {
-                            const skillName = gap.skill || gap.keyword;
-                            return (
-                              <div
-                                key={skillName}
-                                style={{
-                                  display: 'flex',
-                                  alignItems: 'center',
-                                  gap: '8px',
-                                  padding: '6px 12px',
-                                  borderRadius: '6px',
-                                  background: 'rgba(248, 113, 113, 0.12)',
-                                  border: '1px solid rgba(248, 113, 113, 0.3)',
-                                  color: '#fca5a5',
-                                  fontSize: '12px'
-                                }}
-                              >
-                                <div>
-                                  <span style={{ fontWeight: 600 }}>{skillName}</span>
-                                  <span style={{ fontSize: '10px', color: 'var(--text-muted)', marginLeft: '4px' }}>({gap.category})</span>
-                                </div>
-                                <button
-                                  type="button"
-                                  onClick={() => openLearnModal(skillName, gap.category)}
-                                  style={{
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    gap: '3px',
-                                    padding: '2px 7px',
-                                    borderRadius: '4px',
-                                    background: 'rgba(251, 191, 36, 0.18)',
-                                    border: '1px solid rgba(251, 191, 36, 0.35)',
-                                    color: '#fbbf24',
-                                    fontSize: '10px',
-                                    fontWeight: 600,
-                                    cursor: 'pointer'
-                                  }}
-                                  title={`Learn ${skillName} with Socratic AI prompts`}
-                                >
-                                  <BookOpen className="w-2.5 h-2.5" />
-                                  <span>Learn</span>
-                                </button>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      )}
-                    </div>
-
-                  </div>
-                )}
-
-                {/* Tab Content 2: AI Recruiter Deep Dive (LLM Semantic Evaluation) */}
-                {activeTab === 'ai_insights' && (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-                    
-                    {/* AI Top Control & Model Banner */}
-                    <div
-                      style={{
-                        background: 'linear-gradient(135deg, rgba(168, 85, 247, 0.15) 0%, rgba(56, 189, 248, 0.1) 100%)',
-                        border: '1px solid rgba(168, 85, 247, 0.35)',
-                        borderRadius: '12px',
-                        padding: '16px 20px',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'space-between',
-                        flexWrap: 'wrap',
-                        gap: '12px'
-                      }}
-                    >
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                      <div className="w-full h-1.5 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
                         <div
-                          style={{
-                            width: '36px',
-                            height: '36px',
-                            borderRadius: '8px',
-                            background: 'rgba(168, 85, 247, 0.25)',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center'
-                          }}
-                        >
-                          <Bot className="w-5 h-5 text-purple-400" />
-                        </div>
-                        <div>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                            <span style={{ fontSize: '14px', fontWeight: 700, color: 'var(--text-primary)' }}>
-                              Technical Hiring Manager Evaluation
-                            </span>
-                            <span
-                              style={{
-                                fontSize: '10px',
-                                padding: '2px 8px',
-                                borderRadius: '10px',
-                                background: 'rgba(168, 85, 247, 0.25)',
-                                color: '#c084fc',
-                                fontWeight: 700
-                              }}
-                            >
-                              {aiAnalysis?.modelUsed || 'Neural Analysis'}
-                            </span>
+                          className="h-full bg-indigo-500 rounded-full"
+                          style={{ width: `${atsScoreResult.pillars.keywordMatch.score}%` }}
+                        />
+                      </div>
+                      <span className="text-[10px] text-slate-400 mt-1 block">
+                        Weight: {atsScoreResult.pillars.keywordMatch.weight}%
+                      </span>
+                    </div>
+
+                    {/* Section Structure */}
+                    <div className="p-2.5 bg-white dark:bg-slate-900/80 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm">
+                      <div className="flex items-center justify-between text-xs mb-1">
+                        <span className="text-slate-500 font-medium">Sections</span>
+                        <span className="font-bold text-slate-800 dark:text-slate-200">
+                          {atsScoreResult.pillars.sectionStructure.score}%
+                        </span>
+                      </div>
+                      <div className="w-full h-1.5 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
+                        <div
+                          className="h-full bg-violet-500 rounded-full"
+                          style={{ width: `${atsScoreResult.pillars.sectionStructure.score}%` }}
+                        />
+                      </div>
+                      <span className="text-[10px] text-slate-400 mt-1 block">
+                        Weight: {atsScoreResult.pillars.sectionStructure.weight}%
+                      </span>
+                    </div>
+
+                    {/* Content Metrics */}
+                    <div className="p-2.5 bg-white dark:bg-slate-900/80 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm">
+                      <div className="flex items-center justify-between text-xs mb-1">
+                        <span className="text-slate-500 font-medium">Action & Metrics</span>
+                        <span className="font-bold text-slate-800 dark:text-slate-200">
+                          {atsScoreResult.pillars.contentMetrics.score}%
+                        </span>
+                      </div>
+                      <div className="w-full h-1.5 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
+                        <div
+                          className="h-full bg-emerald-500 rounded-full"
+                          style={{ width: `${atsScoreResult.pillars.contentMetrics.score}%` }}
+                        />
+                      </div>
+                      <span className="text-[10px] text-slate-400 mt-1 block">
+                        Weight: {atsScoreResult.pillars.contentMetrics.weight}%
+                      </span>
+                    </div>
+
+                    {/* ATS Friendliness */}
+                    <div className="p-2.5 bg-white dark:bg-slate-900/80 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm">
+                      <div className="flex items-center justify-between text-xs mb-1">
+                        <span className="text-slate-500 font-medium">Formatting</span>
+                        <span className="font-bold text-slate-800 dark:text-slate-200">
+                          {atsScoreResult.pillars.atsFriendliness.score}%
+                        </span>
+                      </div>
+                      <div className="w-full h-1.5 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
+                        <div
+                          className="h-full bg-teal-500 rounded-full"
+                          style={{ width: `${atsScoreResult.pillars.atsFriendliness.score}%` }}
+                        />
+                      </div>
+                      <span className="text-[10px] text-slate-400 mt-1 block">
+                        Weight: {atsScoreResult.pillars.atsFriendliness.weight}%
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* TAB NAVIGATION */}
+              <div className="flex items-center gap-2 border-b border-slate-200 dark:border-slate-800 pb-2">
+                <button
+                  onClick={() => setActiveTab('recommendations')}
+                  className={`flex items-center gap-1.5 px-3 py-2 text-xs font-semibold rounded-lg transition-all ${
+                    activeTab === 'recommendations'
+                      ? 'bg-indigo-600 text-white shadow-sm shadow-indigo-600/30'
+                      : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
+                  }`}
+                >
+                  <Sparkles className="w-3.5 h-3.5" />
+                  <span>Missing Keywords & Recommendations ({atsScoreResult.recommendations.length})</span>
+                </button>
+
+                <button
+                  onClick={() => setActiveTab('ai_insights')}
+                  className={`flex items-center gap-1.5 px-3 py-2 text-xs font-semibold rounded-lg transition-all ${
+                    activeTab === 'ai_insights'
+                      ? 'bg-violet-600 text-white shadow-sm shadow-violet-600/30'
+                      : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
+                  }`}
+                >
+                  <Bot className="w-3.5 h-3.5" />
+                  <span>AI Recruiter Insights</span>
+                  {aiAnalysis?.strengths && (
+                    <span className="w-2 h-2 rounded-full bg-emerald-400" />
+                  )}
+                </button>
+
+                <button
+                  onClick={() => setActiveTab('matched')}
+                  className={`flex items-center gap-1.5 px-3 py-2 text-xs font-semibold rounded-lg transition-all ${
+                    activeTab === 'matched'
+                      ? 'bg-indigo-600 text-white shadow-sm shadow-indigo-600/30'
+                      : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
+                  }`}
+                >
+                  <CheckCircle2 className="w-3.5 h-3.5" />
+                  <span>Matched Skills ({atsScoreResult.keywordMatch.matched.length})</span>
+                </button>
+
+                <button
+                  onClick={() => setActiveTab('checklist')}
+                  className={`flex items-center gap-1.5 px-3 py-2 text-xs font-semibold rounded-lg transition-all ${
+                    activeTab === 'checklist'
+                      ? 'bg-indigo-600 text-white shadow-sm shadow-indigo-600/30'
+                      : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
+                  }`}
+                >
+                  <Layers className="w-3.5 h-3.5" />
+                  <span>ATS Audit Checklist ({atsScoreResult.checklist.length})</span>
+                </button>
+              </div>
+
+              {/* TAB 1: RECOMMENDATIONS & MISSING KEYWORDS */}
+              {activeTab === 'recommendations' && (
+                <div className="space-y-6 animate-fadeIn">
+                  {/* Actionable Recommendations List */}
+                  <div className="space-y-3">
+                    <h4 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                      <Award className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+                      Priority Action Items to Boost Your Score
+                    </h4>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      {atsScoreResult.recommendations.map((rec, index) => {
+                        const isHigh = rec.priority === 'high';
+                        const isMedium = rec.priority === 'medium';
+                        return (
+                          <div
+                            key={index}
+                            className={`p-3.5 rounded-xl border flex items-start gap-3 transition-all ${
+                              isHigh
+                                ? 'bg-rose-50/60 dark:bg-rose-950/20 border-rose-200 dark:border-rose-900/40'
+                                : isMedium
+                                ? 'bg-amber-50/60 dark:bg-amber-950/20 border-amber-200 dark:border-amber-900/40'
+                                : 'bg-slate-50 dark:bg-slate-800/40 border-slate-200 dark:border-slate-800'
+                            }`}
+                          >
+                            <div className="mt-0.5">
+                              {isHigh ? (
+                                <AlertTriangle className="w-4 h-4 text-rose-600 dark:text-rose-400" />
+                              ) : isMedium ? (
+                                <Zap className="w-4 h-4 text-amber-600 dark:text-amber-400" />
+                              ) : (
+                                <CheckCircle2 className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+                              )}
+                            </div>
+                            <div className="space-y-1">
+                              <div className="flex items-center gap-2">
+                                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full uppercase ${
+                                  isHigh
+                                    ? 'bg-rose-100 text-rose-700 dark:bg-rose-900/50 dark:text-rose-300'
+                                    : isMedium
+                                    ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-300'
+                                    : 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/50 dark:text-indigo-300'
+                                }`}>
+                                  {rec.priority} priority
+                                </span>
+                                <span className="text-[10px] text-slate-400 font-medium">
+                                  {rec.category}
+                                </span>
+                              </div>
+                              <p className="text-xs text-slate-700 dark:text-slate-300 font-medium">
+                                {rec.message}
+                              </p>
+                            </div>
                           </div>
-                          <p style={{ fontSize: '12px', color: 'var(--text-muted)', margin: '2px 0 0 0' }}>
-                            Deep semantic critique evaluating engineering level, architectural ownership, and potential screen disqualifiers.
-                          </p>
-                        </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Missing Keywords Breakdown with One-Click Add */}
+                  <div className="space-y-3">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                      <div>
+                        <h4 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                          <TrendingUp className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+                          Missing High-Value Keywords from Job Description
+                        </h4>
+                        <p className="text-xs text-slate-500 dark:text-slate-400">
+                          These terms were found in the job requirements but not identified in your resume. Click to add them directly into your skills.
+                        </p>
                       </div>
 
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <button
-                          type="button"
-                          onClick={() => handleRunAiAnalysis()}
-                          disabled={isAiAnalyzing}
-                          style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '6px',
-                            padding: '6px 14px',
-                            borderRadius: '6px',
-                            background: 'linear-gradient(135deg, rgba(168, 85, 247, 0.3) 0%, rgba(56, 189, 248, 0.3) 100%)',
-                            border: '1px solid rgba(168, 85, 247, 0.5)',
-                            color: '#c084fc',
-                            fontSize: '12px',
-                            fontWeight: 600,
-                            cursor: isAiAnalyzing ? 'not-allowed' : 'pointer'
-                          }}
-                        >
-                          <RefreshCw className={`w-3.5 h-3.5 ${isAiAnalyzing ? 'animate-spin' : ''}`} />
-                          <span>{isAiAnalyzing ? 'Analyzing...' : 'Re-run Analysis'}</span>
-                        </button>
+                      {/* Filter by Category */}
+                      <div className="flex items-center gap-1">
+                        {['all', 'frontend', 'backend', 'cloud', 'database', 'tools'].map((cat) => (
+                          <button
+                            key={cat}
+                            onClick={() => setSelectedCategoryFilter(cat)}
+                            className={`text-[10px] font-semibold px-2 py-1 rounded-md uppercase transition-colors ${
+                              selectedCategoryFilter === cat
+                                ? 'bg-indigo-600 text-white'
+                                : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700'
+                            }`}
+                          >
+                            {cat}
+                          </button>
+                        ))}
                       </div>
                     </div>
 
-                    {!aiAnalysis ? (
-                      <div
-                        style={{
-                          padding: '30px',
-                          textAlign: 'center',
-                          color: 'var(--text-muted)',
-                          background: 'rgba(15, 23, 42, 0.4)',
-                          borderRadius: '12px'
-                        }}
-                      >
-                        <RefreshCw className="w-6 h-6 animate-spin mx-auto mb-2 text-purple-400" />
-                        <p style={{ fontSize: '13px' }}>Generating deep LLM recruiter analysis...</p>
+                    {filteredMissingSkills.length > 0 ? (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5">
+                        {filteredMissingSkills.map((item, idx) => (
+                          <div
+                            key={idx}
+                            className="flex items-center justify-between p-2.5 bg-white dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700/60 rounded-xl hover:border-indigo-400 dark:hover:border-indigo-500/50 transition-all group"
+                          >
+                            <div className="min-w-0 pr-2">
+                              <div className="flex items-center gap-1.5">
+                                <span className="text-xs font-semibold text-slate-800 dark:text-slate-200 truncate capitalize">
+                                  {item.skill}
+                                </span>
+                                {item.frequency > 1 && (
+                                  <span className="text-[10px] font-bold px-1.5 py-0.2 rounded bg-indigo-50 text-indigo-600 dark:bg-indigo-950/60 dark:text-indigo-400">
+                                    {item.frequency}x
+                                  </span>
+                                )}
+                              </div>
+                              <span className="text-[10px] text-slate-400 uppercase tracking-wider block">
+                                {item.category}
+                              </span>
+                            </div>
+
+                            <button
+                              onClick={() => handleAddSkill(item.skill)}
+                              className="flex items-center gap-1 px-2 py-1 bg-indigo-50 hover:bg-indigo-600 text-indigo-600 hover:text-white dark:bg-indigo-900/40 dark:hover:bg-indigo-600 dark:text-indigo-300 rounded-lg text-xs font-semibold transition-all shadow-sm"
+                              title="Add to Skills section"
+                            >
+                              <Plus className="w-3 h-3" />
+                              <span>Add</span>
+                            </button>
+                          </div>
+                        ))}
                       </div>
                     ) : (
-                      <>
-                        {/* Executive Fit Verdict Card */}
-                        <div
-                          style={{
-                            background: 'rgba(15, 23, 42, 0.7)',
-                            border: '1px solid var(--border-subtle)',
-                            borderRadius: '12px',
-                            padding: '18px 20px'
-                          }}
-                        >
-                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                              <span
-                                style={{
-                                  padding: '4px 10px',
-                                  borderRadius: '8px',
-                                  background: aiAnalysis.fitVerdict?.toLowerCase().includes('strong')
-                                    ? 'rgba(52, 211, 153, 0.2)'
-                                    : aiAnalysis.fitVerdict?.toLowerCase().includes('moderate')
-                                    ? 'rgba(251, 191, 36, 0.2)'
-                                    : 'rgba(248, 113, 113, 0.2)',
-                                  color: aiAnalysis.fitVerdict?.toLowerCase().includes('strong')
-                                    ? '#34d399'
-                                    : aiAnalysis.fitVerdict?.toLowerCase().includes('moderate')
-                                    ? '#fbbf24'
-                                    : '#f87171',
-                                  fontSize: '12px',
-                                  fontWeight: 700
-                                }}
-                              >
-                                {aiAnalysis.fitVerdict || 'Evaluated'}
-                              </span>
-                              <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
-                                {aiAnalysis.seniorityAlignment}
-                              </span>
-                            </div>
-                          </div>
-
-                          <p style={{ fontSize: '13px', color: 'var(--text-primary)', lineHeight: '1.5', margin: 0 }}>
-                            {aiAnalysis.fitSummary}
-                          </p>
-                        </div>
-
-                        {/* 2-Column: Strengths vs Gaps & Red Flags */}
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
-                          
-                          {/* Strengths */}
-                          <div
-                            style={{
-                              background: 'rgba(15, 23, 42, 0.6)',
-                              border: '1px solid rgba(52, 211, 153, 0.3)',
-                              borderRadius: '10px',
-                              padding: '16px'
-                            }}
-                          >
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '12px', color: '#34d399' }}>
-                              <CheckCircle2 className="w-4 h-4" />
-                              <span style={{ fontSize: '13px', fontWeight: 700 }}>Key Technical Differentiators</span>
-                            </div>
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                              {(aiAnalysis.keyStrengths || []).map((strength, idx) => (
-                                <div
-                                  key={idx}
-                                  style={{
-                                    fontSize: '12px',
-                                    color: 'var(--text-secondary)',
-                                    lineHeight: '1.4',
-                                    display: 'flex',
-                                    gap: '8px'
-                                  }}
-                                >
-                                  <span style={{ color: '#34d399', fontWeight: 700 }}>•</span>
-                                  <span>{strength}</span>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-
-                          {/* Critical Gaps & Potential Screen Disqualifiers */}
-                          <div
-                            style={{
-                              background: 'rgba(15, 23, 42, 0.6)',
-                              border: '1px solid rgba(248, 113, 113, 0.3)',
-                              borderRadius: '10px',
-                              padding: '16px'
-                            }}
-                          >
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '12px', color: '#f87171' }}>
-                              <AlertTriangle className="w-4 h-4" />
-                              <span style={{ fontSize: '13px', fontWeight: 700 }}>Critical Gaps & Screening Risks</span>
-                            </div>
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                              {(aiAnalysis.criticalGaps || []).map((gap, idx) => (
-                                <div
-                                  key={idx}
-                                  style={{
-                                    fontSize: '12px',
-                                    color: 'var(--text-secondary)',
-                                    lineHeight: '1.4',
-                                    display: 'flex',
-                                    gap: '8px'
-                                  }}
-                                >
-                                  <span style={{ color: '#f87171', fontWeight: 700 }}>•</span>
-                                  <span>{gap}</span>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-
-                        </div>
-
-                        {/* Tailored Bullet Point Rewrites */}
-                        {(aiAnalysis.tailoredBulletRewrites || []).length > 0 && (
-                          <div
-                            style={{
-                              background: 'rgba(15, 23, 42, 0.6)',
-                              border: '1px solid rgba(168, 85, 247, 0.3)',
-                              borderRadius: '10px',
-                              padding: '16px'
-                            }}
-                          >
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '12px', color: '#c084fc' }}>
-                              <TrendingUp className="w-4 h-4" />
-                              <span style={{ fontSize: '13px', fontWeight: 700 }}>Tailored Bullet Rewrites (STAR / XYZ Impact)</span>
-                            </div>
-
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                              {aiAnalysis.tailoredBulletRewrites.map((rewrite, idx) => (
-                                <div
-                                  key={idx}
-                                  style={{
-                                    background: 'rgba(30, 41, 59, 0.5)',
-                                    border: '1px solid var(--border-subtle)',
-                                    borderRadius: '8px',
-                                    padding: '12px 14px'
-                                  }}
-                                >
-                                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
-                                    <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-                                      {rewrite.originalContext || 'Targeted Revision'}
-                                    </span>
-                                    <button
-                                      type="button"
-                                      onClick={() => handleCopyRewrite(rewrite.suggestedRewrite, idx)}
-                                      style={{
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        gap: '4px',
-                                        padding: '4px 10px',
-                                        borderRadius: '6px',
-                                        background: copiedRewriteIndex === idx ? 'rgba(52, 211, 153, 0.2)' : 'rgba(168, 85, 247, 0.15)',
-                                        border: copiedRewriteIndex === idx ? '1px solid rgba(52, 211, 153, 0.4)' : '1px solid rgba(168, 85, 247, 0.3)',
-                                        color: copiedRewriteIndex === idx ? '#34d399' : '#c084fc',
-                                        fontSize: '11px',
-                                        fontWeight: 600,
-                                        cursor: 'pointer'
-                                      }}
-                                    >
-                                      {copiedRewriteIndex === idx ? (
-                                        <>
-                                          <Check className="w-3 h-3" />
-                                          <span>Copied!</span>
-                                        </>
-                                      ) : (
-                                        <>
-                                          <Copy className="w-3 h-3" />
-                                          <span>Copy Rewrite</span>
-                                        </>
-                                      )}
-                                    </button>
-                                  </div>
-
-                                  <div
-                                    style={{
-                                      fontSize: '12px',
-                                      color: 'var(--text-primary)',
-                                      background: 'rgba(15, 23, 42, 0.75)',
-                                      padding: '8px 12px',
-                                      borderRadius: '6px',
-                                      fontFamily: 'monospace',
-                                      marginBottom: '6px'
-                                    }}
-                                  >
-                                    {rewrite.suggestedRewrite}
-                                  </div>
-
-                                  <div style={{ fontSize: '11px', color: '#c084fc', fontStyle: 'italic' }}>
-                                    Why this works: {rewrite.rationale}
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        )}
-
-                        {/* Anticipated Technical Interview Probing Areas */}
-                        {(aiAnalysis.interviewProbingAreas || []).length > 0 && (
-                          <div
-                            style={{
-                              background: 'rgba(15, 23, 42, 0.6)',
-                              border: '1px solid var(--border-subtle)',
-                              borderRadius: '10px',
-                              padding: '16px'
-                            }}
-                          >
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '12px', color: '#38bdf8' }}>
-                              <HelpCircle className="w-4 h-4" />
-                              <span style={{ fontSize: '13px', fontWeight: 700 }}>Anticipated Technical Interview Probing Questions</span>
-                            </div>
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                              {aiAnalysis.interviewProbingAreas.map((q, idx) => (
-                                <div
-                                  key={idx}
-                                  style={{
-                                    fontSize: '12px',
-                                    color: 'var(--text-primary)',
-                                    background: 'rgba(30, 41, 59, 0.4)',
-                                    padding: '8px 12px',
-                                    borderRadius: '6px',
-                                    lineHeight: '1.4'
-                                  }}
-                                >
-                                  {q}
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        )}
-                      </>
+                      <div className="p-6 text-center bg-slate-50 dark:bg-slate-800/30 rounded-xl border border-dashed border-slate-300 dark:border-slate-700 text-xs text-slate-500">
+                        No missing keywords found for the selected filter! Your resume covers these role requirements.
+                      </div>
                     )}
                   </div>
-                )}
+                </div>
+              )}
 
-                {/* Tab Content 3: Matched Keywords */}
-                {activeTab === 'matched' && (
-                  <div
-                    style={{
-                      background: 'rgba(15, 23, 42, 0.65)',
-                      border: '1px solid var(--border-subtle)',
-                      borderRadius: '12px',
-                      padding: '20px'
-                    }}
-                  >
-                    <h4 style={{ fontSize: '14px', fontWeight: 600, color: 'var(--text-primary)', margin: '0 0 12px 0' }}>
-                      Keywords Successfully Parsed by ATS ({result.matchedSkills?.length || 0}):
-                    </h4>
-                    <p style={{ fontSize: '12px', color: 'var(--text-muted)', margin: '0 0 16px 0' }}>
-                      These skills exist in both the job description and your resume. The weighted ATS score prioritizes skills verified within Work Experience bullets over simple skills lists.
-                    </p>
-
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
-                      {(result.matchedSkills || []).map((skill) => {
-                        const skillName = skill.canonical || skill.key;
-                        const weightPercent = skill.locations?.inExperience > 0 ? 100 : (skill.locations?.inProjects > 0 ? 85 : 50);
-                        return (
-                          <div
-                            key={skillName}
-                            style={{
-                              display: 'flex',
-                              alignItems: 'center',
-                              gap: '6px',
-                              padding: '6px 12px',
-                              borderRadius: '6px',
-                              background: 'rgba(52, 211, 153, 0.12)',
-                              border: '1px solid rgba(52, 211, 153, 0.3)',
-                              color: '#34d399',
-                              fontSize: '12px'
-                            }}
-                          >
-                            <CheckCircle2 className="w-3.5 h-3.5" />
-                            <span style={{ fontWeight: 600 }}>{skillName}</span>
-                            <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
-                              ({weightPercent}% context weight)
-                            </span>
-                          </div>
-                        );
-                      })}
+              {/* TAB 2: AI RECRUITER INSIGHTS */}
+              {activeTab === 'ai_insights' && (
+                <div className="space-y-6 animate-fadeIn">
+                  {aiError && (
+                    <div className="p-4 bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-900/50 rounded-xl flex items-start gap-3">
+                      <AlertTriangle className="w-5 h-5 text-rose-600 dark:text-rose-400 flex-shrink-0 mt-0.5" />
+                      <div className="space-y-1">
+                        <h4 className="text-xs font-bold text-rose-800 dark:text-rose-300">
+                          AI Analysis Notice
+                        </h4>
+                        <p className="text-xs text-rose-700 dark:text-rose-400">
+                          {aiError}
+                        </p>
+                      </div>
                     </div>
-                  </div>
-                )}
+                  )}
 
-                {/* Tab Content 4: ATS Structural Audit */}
-                {activeTab === 'checklist' && (
-                  <div
-                    style={{
-                      background: 'rgba(15, 23, 42, 0.65)',
-                      border: '1px solid var(--border-subtle)',
-                      borderRadius: '12px',
-                      padding: '20px'
-                    }}
-                  >
-                    <h4 style={{ fontSize: '14px', fontWeight: 600, color: 'var(--text-primary)', margin: '0 0 12px 0' }}>
-                      Applicant Tracking System Structural Checklist:
-                    </h4>
+                  {aiAnalysis ? (
+                    <div className="space-y-6">
+                      {/* Executive Summary */}
+                      {aiAnalysis.executiveSummary && (
+                        <div className="p-4 bg-gradient-to-r from-violet-500/10 via-purple-500/10 to-indigo-500/10 border border-violet-500/20 rounded-xl space-y-1.5">
+                          <div className="flex items-center gap-2 text-violet-700 dark:text-violet-300 text-xs font-bold uppercase tracking-wider">
+                            <Bot className="w-4 h-4" />
+                            <span>Recruiter Executive Summary</span>
+                          </div>
+                          <p className="text-xs text-slate-700 dark:text-slate-300 leading-relaxed font-medium">
+                            {aiAnalysis.executiveSummary}
+                          </p>
+                        </div>
+                      )}
 
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                      {(result.checklist || []).map((item, idx) => {
-                        const checkTitle = item.title || item.label;
-                        const checkDesc = item.description || item.detail;
-                        return (
-                          <div
-                            key={checkTitle || idx}
-                            style={{
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'space-between',
-                              padding: '10px 14px',
-                              borderRadius: '8px',
-                              background: 'rgba(30, 41, 59, 0.4)',
-                              border: '1px solid var(--border-subtle)'
-                            }}
-                          >
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                              {item.passed ? (
-                                <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-                              ) : (
-                                <AlertTriangle className="w-4 h-4 text-amber-400" />
-                              )}
-                              <div>
-                                <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-primary)' }}>
-                                  {checkTitle}
+                      {/* 2-Column Strengths vs Gaps */}
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {/* Strengths */}
+                        <div className="p-4 bg-emerald-50/50 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-900/40 rounded-xl space-y-3">
+                          <h4 className="text-xs font-bold text-emerald-800 dark:text-emerald-300 flex items-center gap-2 uppercase tracking-wider">
+                            <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                            Identified Resume Strengths
+                          </h4>
+                          <ul className="space-y-2">
+                            {aiAnalysis.strengths?.map((str, idx) => (
+                              <li key={idx} className="flex items-start gap-2 text-xs text-slate-700 dark:text-slate-300">
+                                <span className="text-emerald-500 font-bold">•</span>
+                                <span>{str}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+
+                        {/* Gaps */}
+                        <div className="p-4 bg-amber-50/50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-900/40 rounded-xl space-y-3">
+                          <h4 className="text-xs font-bold text-amber-800 dark:text-amber-300 flex items-center gap-2 uppercase tracking-wider">
+                            <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-400" />
+                            Gaps & Vulnerabilities
+                          </h4>
+                          <ul className="space-y-2">
+                            {aiAnalysis.gaps?.map((gap, idx) => (
+                              <li key={idx} className="flex items-start gap-2 text-xs text-slate-700 dark:text-slate-300">
+                                <span className="text-amber-500 font-bold">•</span>
+                                <span>{gap}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      </div>
+
+                      {/* Tailored Bullet Suggestions with One-Click Copy */}
+                      {aiAnalysis.tailoredBulletSuggestions?.length > 0 && (
+                        <div className="space-y-3">
+                          <div>
+                            <h4 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                              <Sparkles className="w-4 h-4 text-violet-600 dark:text-violet-400" />
+                              Tailored High-Impact Resume Bullets
+                            </h4>
+                            <p className="text-xs text-slate-500 dark:text-slate-400">
+                              Optimized with the Google X-Y-Z formula: "Accomplished [X] as measured by [Y], by doing [Z]".
+                            </p>
+                          </div>
+
+                          <div className="space-y-2.5">
+                            {aiAnalysis.tailoredBulletSuggestions.map((item, idx) => (
+                              <div
+                                key={idx}
+                                className="p-3.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700/80 rounded-xl flex items-start justify-between gap-3 group hover:border-violet-400 dark:hover:border-violet-500/60 transition-all shadow-sm"
+                              >
+                                <div className="space-y-1">
+                                  {item.role && (
+                                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-violet-100 text-violet-700 dark:bg-violet-900/50 dark:text-violet-300 uppercase tracking-wider">
+                                      {item.role}
+                                    </span>
+                                  )}
+                                  <p className="text-xs text-slate-800 dark:text-slate-200 leading-relaxed font-mono">
+                                    "{item.bullet || item}"
+                                  </p>
                                 </div>
-                                <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-                                  {checkDesc}
-                                </div>
+
+                                <button
+                                  onClick={() => handleCopyBullet(item.bullet || item, idx)}
+                                  className="flex items-center gap-1 px-2.5 py-1.5 bg-slate-100 hover:bg-violet-600 text-slate-700 hover:text-white dark:bg-slate-700 dark:hover:bg-violet-600 dark:text-slate-200 rounded-lg text-xs font-semibold transition-all flex-shrink-0"
+                                  title="Copy bullet"
+                                >
+                                  {copiedIndex === idx ? (
+                                    <>
+                                      <Check className="w-3.5 h-3.5 text-emerald-400" />
+                                      <span className="text-emerald-400">Copied</span>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <Copy className="w-3.5 h-3.5" />
+                                      <span>Copy</span>
+                                    </>
+                                  )}
+                                </button>
                               </div>
-                            </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="p-8 text-center bg-slate-50 dark:bg-slate-800/30 rounded-2xl border border-dashed border-slate-300 dark:border-slate-700 space-y-3">
+                      <div className="w-12 h-12 rounded-xl bg-violet-100 dark:bg-violet-900/40 text-violet-600 dark:text-violet-400 flex items-center justify-center mx-auto">
+                        <Sparkles className="w-6 h-6" />
+                      </div>
+                      <h4 className="text-sm font-bold text-slate-900 dark:text-white">
+                        Run Deep AI Recruiter Review
+                      </h4>
+                      <p className="text-xs text-slate-500 dark:text-slate-400 max-w-md mx-auto">
+                        Execute a comprehensive analysis powered by your configured LLM (Gemini or local Ollama) to extract personalized strengths, weaknesses, and Google X-Y-Z formula bullets.
+                      </p>
+                      <button
+                        onClick={handleDeepAiAudit}
+                        disabled={isAiRunning}
+                        className="inline-flex items-center gap-2 px-4 py-2 bg-violet-600 hover:bg-violet-700 text-white text-xs font-bold rounded-lg shadow-md shadow-violet-600/30 transition-all"
+                      >
+                        <Sparkles className="w-4 h-4" />
+                        <span>Start Deep AI Review</span>
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
 
-                            <span
-                              style={{
-                                fontSize: '11px',
-                                fontWeight: 700,
-                                color: item.passed ? '#34d399' : '#fbbf24'
-                              }}
-                            >
-                              {item.passed ? 'PASSED' : 'CHECK'}
+              {/* TAB 3: MATCHED SKILLS */}
+              {activeTab === 'matched' && (
+                <div className="space-y-4 animate-fadeIn">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h4 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                        <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                        Skills Successfully Matched in Your Resume ({atsScoreResult.keywordMatch.matched.length})
+                      </h4>
+                      <p className="text-xs text-slate-500 dark:text-slate-400">
+                        These keywords from the job description are correctly detected by ATS parsers.
+                      </p>
+                    </div>
+
+                    <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40 px-2.5 py-1 rounded-full border border-emerald-200 dark:border-emerald-800/50">
+                      {Math.round((atsScoreResult.keywordMatch.matched.length / Math.max(1, atsScoreResult.keywordMatch.totalTargetKeywords)) * 100)}% Coverage
+                    </span>
+                  </div>
+
+                  <div className="flex flex-wrap gap-2">
+                    {atsScoreResult.keywordMatch.matched.map((skill, idx) => (
+                      <span
+                        key={idx}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800/60 rounded-lg text-xs font-medium text-emerald-800 dark:text-emerald-300 capitalize"
+                      >
+                        <Check className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                        {skill}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* TAB 4: ATS AUDIT CHECKLIST */}
+              {activeTab === 'checklist' && (
+                <div className="space-y-4 animate-fadeIn">
+                  <div>
+                    <h4 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                      <ShieldCheck className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+                      Automated ATS Compatibility Checklist
+                    </h4>
+                    <p className="text-xs text-slate-500 dark:text-slate-400">
+                      Standard industry criteria enforced by major ATS engines (Workday, Greenhouse, Lever, Taleo).
+                    </p>
+                  </div>
+
+                  <div className="divide-y divide-slate-200 dark:divide-slate-800 border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden bg-white dark:bg-slate-900/60">
+                    {atsScoreResult.checklist.map((item, idx) => (
+                      <div
+                        key={idx}
+                        className="p-3.5 flex items-start justify-between gap-4 hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors"
+                      >
+                        <div className="flex items-start gap-3">
+                          <div className="mt-0.5">
+                            {item.passed ? (
+                              <div className="w-5 h-5 rounded-full bg-emerald-100 dark:bg-emerald-900/50 text-emerald-600 dark:text-emerald-400 flex items-center justify-center">
+                                <Check className="w-3.5 h-3.5" />
+                              </div>
+                            ) : (
+                              <div className="w-5 h-5 rounded-full bg-rose-100 dark:bg-rose-900/50 text-rose-600 dark:text-rose-400 flex items-center justify-center">
+                                <X className="w-3.5 h-3.5" />
+                              </div>
+                            )}
+                          </div>
+                          <div>
+                            <span className="text-xs font-bold text-slate-900 dark:text-white block">
+                              {item.label}
+                            </span>
+                            <span className="text-xs text-slate-500 dark:text-slate-400">
+                              {item.detail}
                             </span>
                           </div>
-                        );
-                      })}
-                    </div>
+                        </div>
+
+                        <span
+                          className={`text-[10px] font-bold px-2 py-0.5 rounded-full uppercase flex-shrink-0 ${
+                            item.passed
+                              ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300'
+                              : 'bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-300'
+                          }`}
+                        >
+                          {item.passed ? 'PASSED' : 'ACTION NEEDED'}
+                        </span>
+                      </div>
+                    ))}
                   </div>
-                )}
-              </>
-            )}
-          </div>
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="p-12 text-center bg-slate-50 dark:bg-slate-800/30 rounded-2xl border border-dashed border-slate-300 dark:border-slate-700 space-y-4">
+              <div className="w-16 h-16 rounded-2xl bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 flex items-center justify-center mx-auto">
+                <Target className="w-8 h-8" />
+              </div>
+              <div className="space-y-1">
+                <h3 className="text-base font-bold text-slate-900 dark:text-white">
+                  Ready to audit your resume for ATS algorithms
+                </h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400 max-w-md mx-auto">
+                  Paste your target job description or click one of the preset roles above, then hit <strong>"Analyze ATS Score"</strong>.
+                </p>
+              </div>
+              <button
+                onClick={handleRunAudit}
+                className="inline-flex items-center gap-2 px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl shadow-md shadow-indigo-600/30 transition-all"
+              >
+                <RefreshCw className="w-4 h-4" />
+                <span>Run First ATS Audit</span>
+              </button>
+            </div>
+          )}
+        </div>
+
+        {/* MODAL FOOTER */}
+        <div className="flex items-center justify-between px-6 py-4 border-t border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/80">
+          <button
+            onClick={() => openLearnModal('ats')}
+            className="flex items-center gap-1.5 text-xs text-indigo-600 dark:text-indigo-400 hover:underline font-semibold"
+          >
+            <BookOpen className="w-3.5 h-3.5" />
+            <span>How ATS Algorithms Work (Workday, Greenhouse, Lever)</span>
+            <ArrowUpRight className="w-3 h-3" />
+          </button>
+
+          <button
+            onClick={onClose}
+            className="px-5 py-2 text-xs font-semibold text-slate-700 dark:text-slate-200 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-xl transition-colors shadow-sm"
+          >
+            Done
+          </button>
         </div>
       </div>
     </div>
