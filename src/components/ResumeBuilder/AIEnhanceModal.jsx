@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useApp } from '../../context/AppContext';
 import { enhanceResumeWithAi } from '../../services/parserService';
-import confetti from 'canvas-confetti';
 import { 
   Sparkles, 
   CheckCircle2, 
@@ -154,14 +153,6 @@ export default function AIEnhanceModal({ isOpen, onClose }) {
         customResumeData: mergedData
       });
     }
-
-    try {
-      confetti({
-        particleCount: 120,
-        spread: 80,
-        origin: { y: 0.6 }
-      });
-    } catch (e) {}
 
     showToast('Accepted! Resume updated and saved to Version History.', 'success');
     onClose();
